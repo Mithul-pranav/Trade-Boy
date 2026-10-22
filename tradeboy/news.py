@@ -29,6 +29,7 @@ KEYWORDS = {
     "NZD": ["nzd", "kiwi", "rbnz", "new zealand"],
 }
 ATOM = "{http://www.w3.org/2005/Atom}"
+RSS1 = "{http://purl.org/rss/1.0/}"  # RSS 1.0 (RDF), used by the RBA and the Bank of Canada
 
 
 GOOGLE_NEWS = "https://news.google.com/rss/search"
@@ -97,9 +98,10 @@ def _text(node, *tags) -> str | None:
 
 
 def _link(item) -> str:
-    link = item.find("link")
-    if link is not None and link.text:
-        return link.text.strip()
+    for tag in ("link", f"{RSS1}link"):
+        link = item.find(tag)
+        if link is not None and link.text:
+            return link.text.strip()
     atom = item.find(f"{ATOM}link")
     return atom.get("href", "") if atom is not None else ""
 
@@ -110,10 +112,11 @@ def parse_feed(xml: str) -> list[Item]:
     Google News titles end in " - Publisher" and name the publisher in <source>; the suffix is dropped.
     """
     root = ET.fromstring(xml)
-    items = root.iter("item") if root.find(".//item") is not None else root.iter(f"{ATOM}entry")
+    tag = next((t for t in ("item", f"{RSS1}item") if root.find(f".//{t}") is not None), f"{ATOM}entry")
+    items = root.iter(tag)
     out = []
     for item in items:
-        title = _text(item, "title", f"{ATOM}title")
+        title = _text(item, "title", f"{RSS1}title", f"{ATOM}title")
         when = _when(_text(item, "pubDate", "{http://purl.org/dc/elements/1.1/}date", f"{ATOM}updated", f"{ATOM}published"))
         if not (title and when):
             continue

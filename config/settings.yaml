@@ -69,7 +69,8 @@ news:
     - {name: Bank of Japan, url: "https://www.boj.or.jp/en/rss/whatsnew.xml", currencies: [JPY]}
     - {name: RBA, url: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml", currencies: [AUD]}
     - {name: Bank of Canada, url: "https://www.bankofcanada.ca/content_type/press-releases/feed/", currencies: [CAD]}
-    - {name: FXStreet, url: "https://www.fxstreet.com/rss/news"}
+    # FXStreet (www.fxstreet.com/rss/news) is left out: it answers scripts with a Cloudflare "Just a moment"
+    # challenge page (403), so it could only ever show up as a data gap.
     - {name: Google News USD, google_news: '"Federal Reserve" OR FOMC OR "US dollar"', currencies: [USD]}
     - {name: Google News EUR, google_news: 'ECB OR "euro zone" OR "EUR/USD"', currencies: [EUR]}
     - {name: Google News GBP, google_news: '"Bank of England" OR sterling OR "GBP/USD"', currencies: [GBP]}
