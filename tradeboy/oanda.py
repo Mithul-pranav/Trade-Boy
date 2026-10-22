@@ -168,3 +168,15 @@ class OandaClient:
 
     def close_trade(self, trade_id: str) -> dict:
         return self._request("PUT", f"/v3/accounts/{self.account_id}/trades/{trade_id}/close")
+
+    def set_stop(self, trade_id: str, instrument: str, price: float) -> dict:
+        """Moves a trade's stop loss (held by OANDA, so it works while the desk is offline)."""
+        stop = {"price": f"{price:.{price_decimals(instrument)}f}", "timeInForce": "GTC"}
+        return self._request("PUT", f"/v3/accounts/{self.account_id}/trades/{trade_id}/orders",
+                             json={"stopLoss": stop})
+
+    def trade_details(self, trade_id: str) -> dict:
+        """State ("OPEN" or "CLOSED") and realized profit or loss of one trade, in the account currency."""
+        trade = self._request("GET", f"/v3/accounts/{self.account_id}/trades/{trade_id}")["trade"]
+        return {"state": trade["state"], "realized_pl": float(trade.get("realizedPL", 0.0)),
+                "close_price": float(trade["averageClosePrice"]) if trade.get("averageClosePrice") else None}

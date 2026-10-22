@@ -305,6 +305,8 @@ class Debate:
         stop, stop_note = self._stop(ev, side, head["stop_loss"])
         entry = ev.quote.ask if side is Side.BUY else ev.quote.bid
         target = head["take_profit"]
+        exit_plan = head.get("exit_plan") or {"type": "time_limit", "why_trade_exists": head["reasoning"][:300],
+                                              "close_early_if": "not stated"}
         if target is not None and (target - entry) * (1 if side is Side.BUY else -1) <= 0:
             target = None
         proposal = TradeProposal(
@@ -315,6 +317,9 @@ class Debate:
             rationale=head["reasoning"],
             debate_id=debate_id,
             risk_fraction=round(size, 3),
+            hold_hours=int(_clamp(int(head["hold_hours"]), 1, 168)),
+            exit_type=exit_plan["type"] if exit_plan["type"] != "target" or target is not None else "time_limit",
+            exit_reason=f"Why: {exit_plan['why_trade_exists']} Close early if: {exit_plan['close_early_if']}",
         )
         notes = [f"{head['side']} at {size:.0%} size"]
         if open_objections:
