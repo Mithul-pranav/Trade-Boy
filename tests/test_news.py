@@ -56,3 +56,83 @@ def test_macro_analyst_sees_headlines_and_data_gaps():
     Debate(load_settings(), llm).run(evidence, FakeBroker().account(), NOW)
     macro = next(c["prompt"] for c in llm.calls if c["agent"] == "macro")
     assert "FOMC statement" in macro and "Missing data" in macro
+
+
+GOOGLE_RSS = """<?xml version="1.0"?><rss version="2.0"><channel><title>"ECB" - Google News</title>
+<item><title>ECB holds rates as inflation cools - Reuters</title><link>https://news.google.com/rss/articles/abc</link>
+<pubDate>Thu, 22 Oct 2026 10:00:00 GMT</pubDate><source url="https://www.reuters.com">Reuters</source></item>
+<item><title>Yen jumps as BoJ hints at hike</title><pubDate>Thu, 22 Oct 2026 09:30:00 GMT</pubDate></item>
+<item><title>Euro slips - FT</title><pubDate>Thu, 22 Oct 2026 07:00:00 GMT</pubDate><source url="https://ft.com">FT</source></item>
+<item><title>Lagarde speech preview</title><pubDate>Thu, 22 Oct 2026 06:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def test_google_news_titles_lose_the_publisher_suffix_and_keep_publisher_and_link():
+    item = parse_feed(GOOGLE_RSS)[0]
+    assert (item.title, item.publisher, item.link) == ("ECB holds rates as inflation cools", "Reuters",
+                                                        "https://news.google.com/rss/articles/abc")
+
+
+def test_google_news_feed_from_settings_builds_a_search_url():
+    feed = Feed.from_config({"name": "GN EUR", "google_news": 'ECB OR "euro zone"', "currencies": ["EUR"]})
+    assert feed.url.startswith("https://news.google.com/rss/search?q=ECB+OR+%22euro+zone%22+when%3A2d")
+    assert feed.url.endswith("&hl=en-US&gl=US&ceid=US%3Aen") and feed.currencies == ("EUR",) and feed.max_items == 10
+    # Every Google News entry in the shipped settings builds, and each has a currency.
+    google = [f for f in load_settings().news_feeds if "google_news" in f]
+    assert len(google) == 8 and all(Feed.from_config(f).currencies for f in google)
+
+
+def _client(pages: dict):
+    return httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=pages[r.url.host])))
+
+
+def test_each_feed_is_capped_and_a_story_in_two_feeds_is_listed_once():
+    news = NewsFeeds([Feed("https://gn.test/eur", "GN EUR", ("EUR",), max_items=2),
+                      Feed("https://fx.test/atom", "FX news")],
+                     http=_client({"gn.test": GOOGLE_RSS, "fx.test": FX_ATOM}))
+    got = news.headlines({"EUR", "JPY"}, NOW)
+    # GN EUR keeps its 2 newest; the yen story appears in both feeds but is listed once, with both tags.
+    assert [h.title for h in got] == ["ECB holds rates as inflation cools", "Yen jumps as BoJ hints at hike"]
+    assert got[1].source == "GN EUR" and got[1].currencies == ("EUR", "JPY")
+    assert got[0].publisher == "Reuters"
+
+
+class FakeFinBert:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    def __call__(self, titles, truncation):
+        self.calls.append(list(titles))
+        if self.fail:
+            raise OSError("can't reach huggingface.co")
+        return [{"label": "Negative" if "slips" in t else "Positive", "score": 0.934} for t in titles]
+
+
+def test_finbert_scores_each_headline_once_and_the_macro_prompt_shows_it():
+    from tradeboy.sentiment import FinBert
+
+    pipe = FakeFinBert()
+    news = NewsFeeds(FEEDS, http=feeds().http, sentiment=FinBert(pipeline_factory=lambda: pipe))
+    got = news.headlines({"GBP", "JPY"}, NOW)
+    assert [h.sentiment for h in got] == [{"label": "positive", "confidence": 0.93},
+                                          {"label": "negative", "confidence": 0.93}]
+    news.headlines({"GBP", "JPY"}, NOW)
+    assert len(pipe.calls) == 1  # cached, not re-scored
+    evidence = gather_evidence(FakeBroker(), None, "GBP_USD", NOW, news=news)
+    assert evidence.news[0]["finbert_tone"] == "negative 0.93"
+
+
+def test_finbert_failure_leaves_headlines_unscored_and_reports_a_gap():
+    from tradeboy.sentiment import FinBert
+
+    news = NewsFeeds(FEEDS, http=feeds().http, sentiment=FinBert(pipeline_factory=lambda: FakeFinBert(fail=True)))
+    got = news.headlines({"JPY"}, NOW)
+    assert got and all(h.sentiment is None for h in got)
+    assert any("FinBERT" in g and "huggingface" in g for g in news.gaps())
+
+
+def test_gaps_for_a_pair_leave_out_feeds_for_other_currencies():
+    news = feeds(fail={"fed.test", "fx.test"})
+    news.headlines({"EUR"}, NOW)
+    assert [g.split("'")[1] for g in news.gaps({"EUR", "GBP"})] == ["FX news"]
+    assert [g.split("'")[1] for g in news.gaps({"USD"})] == ["FX news", "Fed"]
