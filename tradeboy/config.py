@@ -51,6 +51,8 @@ class Settings:
     journal_path: Path = field(default=ROOT / "data" / "journal.sqlite3")
     claude: ClaudeSettings = field(default_factory=ClaudeSettings)
     calendar_url: str | None = None
+    # News feeds for the macro analyst: dicts with url, name and optional currencies.
+    news_feeds: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ def load_settings(path: Path = DEFAULT_SETTINGS) -> Settings:
         journal_path=journal_path,
         claude=ClaudeSettings(**raw.get("claude", {})),
         calendar_url=raw.get("calendar", {}).get("url"),
+        news_feeds=list(raw.get("news", {}).get("feeds") or []),
     )
 
 

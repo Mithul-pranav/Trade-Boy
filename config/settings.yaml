@@ -53,5 +53,18 @@ claude:
 calendar:
   url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
+# Free news headlines for the macro analyst, read in code so it has news even without web search.
+# Central bank feeds tag every item with their currency; general feeds are matched by keyword.
+# A feed that can't be read is shown to the agents as a data gap.
+news:
+  feeds:
+    - {name: Federal Reserve, url: "https://www.federalreserve.gov/feeds/press_all.xml", currencies: [USD]}
+    - {name: ECB, url: "https://www.ecb.europa.eu/rss/press.html", currencies: [EUR]}
+    - {name: Bank of England, url: "https://www.bankofengland.co.uk/rss/news", currencies: [GBP]}
+    - {name: Bank of Japan, url: "https://www.boj.or.jp/en/rss/whatsnew.xml", currencies: [JPY]}
+    - {name: RBA, url: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml", currencies: [AUD]}
+    - {name: Bank of Canada, url: "https://www.bankofcanada.ca/content_type/press-releases/feed/", currencies: [CAD]}
+    - {name: FXStreet, url: "https://www.fxstreet.com/rss/news"}
+
 journal:
   path: data/journal.sqlite3

@@ -36,6 +36,9 @@ class Evidence:
     charts: dict[str, dict] = field(default_factory=dict)
     position_book: dict | None = None
     calendar: list[dict] = field(default_factory=list)
+    news: list[dict] = field(default_factory=list)
+    # Inputs that should have been there but weren't, so agents treat silence as missing data, not calm.
+    data_gaps: list[str] = field(default_factory=list)
     scanner_reason: str = ""
 
 
@@ -51,7 +54,7 @@ class DebateResult:
     stance_changes: int
 
 
-def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "") -> Evidence:
+def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "", news=None) -> Evidence:
     quote = broker.quotes([instrument])[instrument]
     evidence = Evidence(instrument, quote, scanner_reason=scanner_reason)
     for granularity, count in TIMEFRAMES.items():
@@ -66,6 +69,17 @@ def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_re
             {"time": e.time.isoformat(), "currency": e.currency, "event": e.title, "impact": e.impact}
             for e in calendar.upcoming(set(currencies(instrument)), now)
         ]
+        if getattr(calendar, "last_error", None):
+            evidence.data_gaps.append(calendar.last_error)
+    else:
+        evidence.data_gaps.append("No economic calendar is configured, so scheduled events are unknown.")
+    if news is not None:
+        evidence.news = [
+            {"time": h.time.isoformat(timespec="minutes"), "source": h.source, "headline": h.title,
+             "currencies": list(h.currencies)}
+            for h in news.headlines(set(currencies(instrument)), now)
+        ]
+        evidence.data_gaps.extend(news.gaps())
     return evidence
 
 
@@ -98,9 +112,12 @@ class Debate:
             head += f"Why the scanner flagged it: {ev.scanner_reason}\n"
         if name == "technical":
             return head + f"\nCharts by timeframe (summary plus the last 12 bars, mid prices):\n{_dump(ev.charts)}"
+        gaps = f"\nMissing data (treat as unknown, not as calm):\n{_dump(ev.data_gaps)}\n" if ev.data_gaps else ""
         if name == "macro":
-            cal = _dump(ev.calendar) if ev.calendar else "No calendar feed available; search for upcoming events."
-            return head + f"\nScheduled events for these currencies (next 48 hours):\n{cal}"
+            cal = _dump(ev.calendar) if ev.calendar else "None listed."
+            news = _dump(ev.news) if ev.news else "None found."
+            return (head + f"\nScheduled events for these currencies (next 48 hours):\n{cal}\n"
+                    f"\nRecent headlines from news feeds (last 48 hours, newest first):\n{news}\n" + gaps)
         return head + f"\nOANDA retail position book:\n{_dump(ev.position_book)}"
 
     def run(self, ev: Evidence, account: AccountState, now: datetime) -> DebateResult:
@@ -113,6 +130,8 @@ class Debate:
                 "charts": {tf: c["summary"] for tf, c in ev.charts.items()},
                 "position_book": ev.position_book,
                 "calendar": ev.calendar,
+                "news": ev.news,
+                "data_gaps": ev.data_gaps,
                 "scanner_reason": ev.scanner_reason,
             },
         }
@@ -175,6 +194,7 @@ class Debate:
             "quote": {"bid": ev.quote.bid, "ask": ev.quote.ask},
             "volatility_atr14_pips": {tf: c["summary"]["atr14_pips"] for tf, c in ev.charts.items()},
             "scheduled_events": ev.calendar,
+            "data_gaps": ev.data_gaps,
         }
         skeptic = self._ask("skeptic", agents.SKEPTIC, f"Pair: {ev.instrument}\nThe case so far:\n{_dump(case)}",
                             agents.SKEPTIC_SCHEMA)

@@ -63,6 +63,8 @@ sent at most once a day: budget gone (desk halted), Claude credits out, spend ca
 - `tradeboy/desk.py`: the 15-minute loop, the code screen, spend caps, scoring and alarms.
 - `tradeboy/llm.py`: Claude calls with structured JSON answers and cost tracking.
 - `tradeboy/calendar.py`, `tradeboy/alerts.py`: economic calendar feed and alerts.
+- `tradeboy/news.py`: free central bank and FX news headlines (RSS/Atom) for the macro analyst, so it
+  has dated news without web search. Unreachable feeds are shown to the agents as missing data.
 
 ## Settings
 

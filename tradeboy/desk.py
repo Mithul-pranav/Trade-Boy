@@ -28,7 +28,7 @@ CREDITS_RETRY = timedelta(hours=6)
 class Desk:
     def __init__(
         self, settings: Settings, broker, journal: Journal, llm, calendar=None, dry_run: bool = True,
-        alerts: Alerts | None = None,
+        alerts: Alerts | None = None, news=None,
     ):
         self.settings = settings
         self.alerts = alerts or Alerts(journal)
@@ -36,6 +36,7 @@ class Desk:
         self.journal = journal
         self.llm = llm
         self.calendar = calendar
+        self.news = news
         self.dry_run = dry_run
         self.executor = Executor(settings, broker, journal, calendar, dry_run=dry_run)
 
@@ -141,7 +142,7 @@ class Desk:
             return None
         log.info("Debate on %s starting.", instrument)
         try:
-            evidence = gather_evidence(self.broker, self.calendar, instrument, now, reason)
+            evidence = gather_evidence(self.broker, self.calendar, instrument, now, reason, news=self.news)
             result = Debate(self.settings, self.llm, self.journal.track_records()).run(
                 evidence, self.executor.budget_account(), now
             )
