@@ -93,6 +93,17 @@ def run(paper: bool, once: bool) -> None:
     desk = _desk(paper)
     interval = desk.settings.scan_interval_minutes * 60
     logging.getLogger("tradeboy").info("Desk started (%s).", "paper trading" if paper else "dry run")
+    if paper:
+        account = desk.executor.budget_account()
+        desk.alerts.send(
+            "started",
+            f"Desk started on the OANDA practice account. Budget equity {account.nav:,.2f} {account.currency} "
+            f"({desk.settings.starting_capital:g} {desk.settings.capital_currency} to start), "
+            f"{desk.settings.risk.risk_per_trade_pct}% risk per trade, scanning every "
+            f"{desk.settings.scan_interval_minutes} minutes, at most {desk.settings.claude.max_debates_per_day} "
+            f"debates a day.",
+            datetime.now(timezone.utc),
+        )
     while True:
         started = time.time()
         try:
