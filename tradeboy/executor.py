@@ -71,6 +71,12 @@ class Executor:
         ]
         return replace(account, nav=equity, open_trades=trades)
 
+    def usd_rate(self, account_currency: str) -> float:
+        """Account-currency value of 1 USD, for comparing Claude API costs with trading results."""
+        if account_currency == "USD":
+            return 1.0
+        return self.broker.to_home_rate("USD", next(p for p in self.settings.pairs if "USD" in p.split("_")))
+
     def budget_account(self) -> AccountState:
         return self._account()
 

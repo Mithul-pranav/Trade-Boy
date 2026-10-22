@@ -93,6 +93,12 @@ def debate(instrument: str, paper: bool) -> None:
         print(json.dumps(result.transcript, indent=2, default=str))
 
 
+def net_result(trading: float, api_usd: float, usd_rate: float) -> dict:
+    """Trading profit or loss minus everything spent on Claude, both in the account currency."""
+    api = api_usd * usd_rate
+    return {"trading": round(trading, 2), "api_costs": round(api, 2), "net": round(trading - api, 2)}
+
+
 def status() -> None:
     from .executor import Executor
 
@@ -105,6 +111,9 @@ def status() -> None:
         broker = OandaClient(load_credentials())
         account = Executor(settings, broker, journal).budget_account()
         print(f"Budget equity: {account.nav:,.2f} {account.currency} (started at {budget[1]:,.2f})")
+        net = net_result(account.nav - budget[1], journal.total_spend(), Executor(settings, broker, journal).usd_rate(account.currency))
+        print(f"Trading result {net['trading']:+,.2f}, Claude API costs -{net['api_costs']:,.2f}, "
+              f"net result after API costs {net['net']:+,.2f} {account.currency}")
     print(f"Claude API spend: {journal.month_spend(now):.2f} USD this month, "
           f"{journal.day_spend(now):.2f} USD in the last 24 hours "
           f"(caps {settings.claude.monthly_budget_usd} / {settings.claude.daily_budget_usd})")

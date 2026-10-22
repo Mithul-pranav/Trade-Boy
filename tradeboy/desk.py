@@ -159,11 +159,11 @@ class Desk:
             execution = self.executor.execute(result.proposal, now)
             decision = execution.decision
             if not decision.approved:
-                result.outcome = "no_trade: hard limits rejected it: " + "; ".join(decision.reasons)
+                result.outcome = f"{result.outcome}; no order: hard limits rejected it: " + "; ".join(decision.reasons)
             elif execution.trade_id:
-                result.outcome = f"trade: opened {decision.units} units, trade {execution.trade_id}"
+                result.outcome = f"{result.outcome}; opened {decision.units} units, trade {execution.trade_id}"
             else:
-                result.outcome = f"trade (dry run): would open {decision.units} units"
+                result.outcome = f"{result.outcome}; dry run, would open {decision.units} units"
             result.transcript["execution"] = {
                 "approved": decision.approved, "units": decision.units, "risk_amount": decision.risk_amount,
                 "reasons": decision.reasons, "trade_id": execution.trade_id, "dry_run": self.dry_run,
@@ -192,7 +192,7 @@ class Desk:
                 result.debate_id, agent, result.instrument, stance, confidence, mid, now, now + timedelta(hours=hours)
             )
         head = result.transcript["head_of_desk"]
-        if head["decision"] == "trade" and head["side"] in ("long", "short"):
+        if head["side"] in ("long", "short"):
             hours = min(max(int(head["hold_hours"]), 1), 168)
             self.journal.record_call(
                 result.debate_id, "head_of_desk", result.instrument, head["side"], 100, mid, now,

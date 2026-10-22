@@ -17,7 +17,7 @@ from . import agents
 from .config import Settings
 from .llm import LLM
 from .market import recent_bars, summarize
-from .models import AccountState, Quote, Side, TradeProposal, currencies
+from .models import AccountState, Quote, Side, TradeProposal, currencies, pip_size
 
 ANALYSTS = {
     "technical": (agents.TECHNICAL, agents.TECHNICAL_SCHEMA, 0),
@@ -25,6 +25,8 @@ ANALYSTS = {
     "positioning": (agents.POSITIONING, agents.VIEW_SCHEMA, 1),
 }
 TIMEFRAMES = {"M15": 200, "H1": 200, "H4": 200, "D": 100}
+MIN_SIZE = 0.25  # smallest share of the normal risk the risk manager or head of desk can choose
+MIN_TRADE_SIZE = 0.1  # floor after unanswered objections have halved the size
 
 
 @dataclass
@@ -47,7 +49,7 @@ class DebateResult:
     debate_id: str
     instrument: str
     proposal: TradeProposal | None
-    outcome: str  # "trade" or why there's no trade
+    outcome: str  # "trade: ..." with how the rules shaped it, or later why the hard limits stopped it
     transcript: dict
     initial_stances: dict[str, str]
     final_stances: dict[str, str]
@@ -202,8 +204,8 @@ class Debate:
 
         # 4. The risk manager sizes each direction against what's already open.
         risk = self._ask("risk_manager", agents.RISK, self._risk_prompt(ev, account), agents.RISK_SCHEMA)
-        risk["long_size"] = _clamp(risk["long_size"], 0.0, 1.0)
-        risk["short_size"] = _clamp(risk["short_size"], 0.0, 1.0)
+        risk["long_size"] = _clamp(risk["long_size"], MIN_SIZE, 1.0)
+        risk["short_size"] = _clamp(risk["short_size"], MIN_SIZE, 1.0)
         transcript["risk_manager"] = risk
 
         # 5. The head of desk decides on the arguments and must answer every serious objection.
@@ -249,27 +251,52 @@ class Debate:
         )
 
     def _enforce(self, ev: Evidence, debate_id: str, skeptic: dict, risk: dict, head: dict):
-        """The checkable rules. Returns (outcome, proposal or None)."""
-        if head["decision"] != "trade" or head["side"] == "none":
-            return "no_trade: head of desk passed", None
+        """The checkable rules. Every debate ends in a trade; the rules shape its size and stop.
+
+        Returns (outcome, proposal).
+        """
+        side = Side.BUY if head["side"] == "long" else Side.SELL
         answered = {a["objection_id"] for a in head["objection_answers"] if a["resolved"]}
         open_objections = [
             o["id"] for o in skeptic["objections"] if o["severity"] in ("fatal", "serious") and o["id"] not in answered
         ]
-        if open_objections:
-            return f"no_trade: unanswered objections {', '.join(open_objections)}", None
-        size = risk["long_size"] if head["side"] == "long" else risk["short_size"]
-        if size <= 0:
-            return f"no_trade: risk manager blocked the {head['side']} side", None
-        if head["stop_loss"] is None:
-            return "no_trade: no stop loss given", None
+        allowed = risk["long_size"] if side is Side.BUY else risk["short_size"]
+        # Each unanswered fatal or serious objection halves the size.
+        size = max(allowed * _clamp(head["size"], MIN_SIZE, 1.0) * 0.5 ** len(open_objections), MIN_TRADE_SIZE)
+        stop, stop_note = self._stop(ev, side, head["stop_loss"])
+        entry = ev.quote.ask if side is Side.BUY else ev.quote.bid
+        target = head["take_profit"]
+        if target is not None and (target - entry) * (1 if side is Side.BUY else -1) <= 0:
+            target = None
         proposal = TradeProposal(
             instrument=ev.instrument,
-            side=Side.BUY if head["side"] == "long" else Side.SELL,
-            stop_loss=float(head["stop_loss"]),
-            take_profit=float(head["take_profit"]) if head["take_profit"] is not None else None,
+            side=side,
+            stop_loss=stop,
+            take_profit=float(target) if target is not None else None,
             rationale=head["reasoning"],
             debate_id=debate_id,
-            risk_fraction=size,
+            risk_fraction=round(size, 3),
         )
-        return "trade", proposal
+        notes = [f"{head['side']} at {size:.0%} size"]
+        if open_objections:
+            notes.append(f"halved for unanswered objections {', '.join(open_objections)}")
+        if stop_note:
+            notes.append(stop_note)
+        return "trade: " + "; ".join(notes), proposal
+
+    def _stop(self, ev: Evidence, side: Side, stop: float | None) -> tuple[float, str]:
+        """The head's stop if it's usable; otherwise one set from volatility. Every order has a stop."""
+        entry = ev.quote.ask if side is Side.BUY else ev.quote.bid
+        pip = pip_size(ev.instrument)
+        sign = -1 if side is Side.BUY else 1
+        minimum = (self.settings.risk.min_stop_pips + 1) * pip
+        if stop is not None and (stop - entry) * sign >= minimum:
+            return float(stop), ""
+        atr = ev.charts.get("H1", {}).get("summary", {}).get("atr14_pips")
+        distance = max(1.5 * atr * pip if atr else 0.0, minimum)
+        if stop is not None and (stop - entry) * sign > 0:
+            note = f"stop widened to the {self.settings.risk.min_stop_pips:g}-pip minimum"
+            distance = minimum
+        else:
+            note = "stop set from volatility (1.5x H1 ATR) because the head's stop was unusable"
+        return round(entry + sign * distance, 5 if pip < 0.01 else 3), note

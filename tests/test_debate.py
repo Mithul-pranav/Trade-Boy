@@ -67,23 +67,28 @@ def test_rebuttal_round_skipped_when_all_agree_but_skeptic_still_attacks():
     result, llm = run(agreeing_script())
     assert not any(a.endswith("_rebuttal") for a in llm.agents_called())
     assert "skeptic" in llm.agents_called()
-    assert result.outcome == "trade"
+    assert result.outcome.startswith("trade: long")
 
 
-def test_unanswered_serious_objection_blocks_the_trade():
+def test_unanswered_serious_objection_halves_the_size():
     result, _ = run(split_script(head_of_desk=head(answers=[("O1", False)])))
-    assert result.proposal is None
+    assert result.proposal.risk_fraction == 0.5
     assert "O1" in result.outcome
 
 
 def test_minor_objections_need_no_answer():
     result, _ = run(split_script())
-    assert result.outcome == "trade"
+    assert result.proposal.risk_fraction == 1.0
 
 
-def test_risk_manager_block_stops_that_side():
+def test_risk_manager_can_shrink_a_side_but_never_block_it():
     result, _ = run(split_script(risk_manager=risk(long=0.0, short=1.0)))
-    assert result.proposal is None and "risk manager" in result.outcome
+    assert result.proposal.risk_fraction == 0.25
+
+
+def test_head_of_desk_chooses_a_share_of_the_allowed_size():
+    result, _ = run(split_script(risk_manager=risk(long=0.8), head_of_desk=head(size=0.5, answers=[("O1", True)])))
+    assert result.proposal.risk_fraction == 0.4
 
 
 def test_winning_trade_carries_risk_managers_size():
@@ -100,6 +105,9 @@ def test_head_of_desk_uses_the_stronger_model():
     assert models["technical"] == SETTINGS.claude.analyst_model
 
 
-def test_no_trade_is_a_normal_outcome():
-    result, _ = run(split_script(head_of_desk=head(decision="no_trade", side="none")))
-    assert result.proposal is None and result.outcome.startswith("no_trade")
+def test_every_debate_ends_in_a_trade_with_a_stop():
+    result, _ = run(split_script(head_of_desk=head(side="short", stop=1.0950, target=1.1100)))
+    p = result.proposal
+    # A short's stop below the price is unusable: code sets one above it from volatility, and drops the target.
+    assert p.side == Side.SELL and p.stop_loss > 1.0950 and p.take_profit is None
+    assert "volatility" in result.outcome
