@@ -101,5 +101,33 @@ macro:
     - {id: IRLTLT01CHM156N, name: Switzerland 10-year yield (monthly), currency: CHF}
     - {id: IRLTLT01NZM156N, name: New Zealand 10-year yield (monthly), currency: NZD}
 
+# Backtest of the code-level rules and the quant seat's signals (tradeboy history, then tradeboy backtest).
+# Trades pay the real historical bid/ask spread, plus the slippage and financing below.
+backtest:
+  first_test: 2019-01-01        # walk-forward test windows start here; earlier years are only for choosing
+  holdout_start: 2025-10-22     # the last year is kept back and checked once, at the end
+  end: 2026-10-22
+  train_years: 3                # a strategy is traded in a window only if it showed an edge in these years
+  test_months: 6
+  costs:
+    slippage_pips: 0.2          # per side, on top of the spread
+    financing_markup_pct: 0.8   # OANDA's yearly financing charge on top of the interest rate gap
+  selection:                    # what a strategy must show in its training years to be traded next
+    min_trades: 60
+    min_avg_r: 0.0
+    min_t_stat: 2.0
+  # The pass bar: all of these must hold, out of sample, before demo trading starts.
+  pass_bar:
+    min_trades: 300             # out-of-sample trades across all test windows
+    min_avg_r: 0.05             # average profit per trade after costs, in units of the amount risked
+    min_t_stat: 2.0             # about 95% sure the average is above zero (monthly results)
+    min_profit_factor: 1.1      # money won / money lost
+    max_drawdown_pct: 20.0      # worst drop of the 100 USD budget at 0.5% risk per trade
+    min_positive_windows_pct: 60.0
+    stress_extra_pips: 0.5      # still profitable when every trade costs this much more
+    holdout_min_avg_r: 0.0
+    pays_for_debates: true      # profit per trade at normal size must exceed one debate's API cost
+  api_cost_per_trade: 0.15      # USD: the middle of the measured 0.11 to 0.21 per debate
+
 journal:
   path: data/journal.sqlite3

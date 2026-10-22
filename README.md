@@ -20,6 +20,7 @@ whether the agents really argue before any paper trading starts.
 | Skeptic | Sonnet | Everything above; argues against every trade |
 | Risk manager | Sonnet | Open trades, correlation, budget used; can only shrink size |
 | Head of desk | Opus | The whole debate plus each analyst's track record |
+| Quant seat | none: plain code, free | Statistical signals that passed the backtest (see below) |
 
 ### How agreement has to be earned
 
@@ -41,7 +42,10 @@ enforces what can be checked:
    can still stop an order.
 7. **Track records.** Every analyst's call is scored in pips once its own time horizon passes, and the head
    of desk sees who has actually been right.
-8. **Agreement alarm.** If the analysts start on the same side in 85% or more of the last 20 debates, the
+8. **The quant seat's numbers count.** It is code, not Claude, and only reports signals that proved an edge
+   after costs on years of history. When it has one and disagrees, the analysts must answer it in a rebuttal
+   round, and a head of desk who trades against it gets half the size. When it has none, it says so plainly.
+9. **Agreement alarm.** If the analysts start on the same side in 85% or more of the last 20 debates, the
    desk raises an alert: they may be echoing each other.
 
 ### Keeping the Claude bill small
@@ -81,12 +85,40 @@ any message, then run `python -m tradeboy test-alert`. The chat ID is found from
   Unreachable feeds are shown to the agents as missing data.
 - `tradeboy/macro.py`: rates, Treasury yields, CPI (year on year), unemployment and foreign 10-year yields
   from FRED's public CSV downloads (no key), refreshed once a day, each with the date of its reading.
+- `tradeboy/quant.py`: the quant seat: statistical signals computed in code, and its view in a debate.
+- `tradeboy/history.py`: downloads and loads OANDA history with bid/ask prices, and FRED short-term rates.
+- `tradeboy/backtest.py`: the backtester, walk-forward, pass bar and report.
 - `tradeboy/sentiment.py`: optional FinBERT headline tone, run locally (`pip install -e '.[sentiment]'`,
   then `news.sentiment: true`). Off by default: torch needs about 1 GB of RAM.
 
 The news and macro feeds need these hosts reachable from the server: news.google.com,
 fred.stlouisfed.org, the central bank sites in `config/settings.yaml`,
 nfs.faireconomy.media (calendar), and huggingface.co if FinBERT is on (one model download).
+
+## Backtesting and the pass bar
+
+Before any demo trading, the desk's code-level rules must pass a written bar on years of real history.
+`tradeboy history` downloads hourly, 4-hour and daily OANDA candles with bid and ask prices for the 7 pairs
+(2016 onwards, about 470,000 hourly candles) plus each currency's 3-month interest rate from FRED.
+`tradeboy backtest` then tests:
+
+- **The code screen as the desk uses it**, in the direction each setup implies and the opposite one.
+- **11 statistical signals** (momentum over 20/60/120 days, daily breakouts, carry, 1h stretch and RSI
+  fades, and each part of the code screen), each traded both ways with two exit styles: 44 strategies.
+
+Costs are real: the historical spread both ways, 0.2 pips of slippage per side, and overnight financing
+(the interest rate gap minus OANDA's charge). The verdict comes only from **walk-forward** test windows: a
+strategy trades in a 6-month window only if it showed an edge in the 3 years before. The last 12 months are
+a **holdout** checked once. Claude debates are not replayed (each costs about 0.15 USD); the rules are.
+
+The pass bar (`backtest.pass_bar` in the settings) needs, out of sample: 300+ trades, at least +0.05R per
+trade after costs, a t-stat of 2 or more, profit factor 1.1+, 60% of windows positive, still positive with
+0.5 pips more cost, a worst drop under 20% of the budget, a positive holdout year, and profit per trade at
+0.5% risk that covers one debate's API cost.
+
+**Latest result: not passed.** See [reports/backtest.md](reports/backtest.md). In short, no rule or signal
+showed an edge after costs; the code screen loses about 0.15R per trade in either direction, which is the
+cost of trading itself. The quant seat therefore tells every debate it has no tested edge.
 
 ## Settings
 
@@ -121,6 +153,8 @@ python -m tradeboy debate EUR_USD     # one debate now, printed in full (dry run
 python -m tradeboy run                # the desk, every 15 minutes, dry run
 python -m tradeboy run --paper        # place winning trades on the OANDA practice account
 python -m tradeboy status             # budget, spend, agreement rate, track records
+python -m tradeboy history            # download years of candles and interest rates (once, then to top up)
+python -m tradeboy backtest           # test the rules, check the pass bar, write reports/backtest.md
 ```
 
 `--paper` refuses to run against a live OANDA account. Credentials come only from environment variables.
