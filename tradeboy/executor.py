@@ -9,12 +9,13 @@ from typing import Protocol
 from .config import Settings
 from .journal import Journal
 from .models import AccountState, CalendarEvent, Quote, RiskDecision, TradeProposal
-from .risk import evaluate, kill_switch_tripped
+from .risk import evaluate, kill_switch_reason
 
 
 class Broker(Protocol):
     def account(self) -> AccountState: ...
     def quotes(self, instruments: list[str]) -> dict[str, Quote]: ...
+    def to_home_rate(self, currency: str, via_instrument: str) -> float: ...
     def market_order(self, instrument: str, units: int, stop_loss: float, take_profit: float | None = None) -> dict: ...
     def close_trade(self, trade_id: str) -> dict: ...
 
@@ -49,23 +50,35 @@ class Executor:
         self.calendar = calendar or NoCalendar()
         self.dry_run = dry_run
 
+    def _start_budget(self, account: AccountState) -> tuple[float, float]:
+        amount, currency = self.settings.starting_capital, self.settings.capital_currency
+        rate = 1.0
+        if currency != account.currency:
+            via = next(p for p in self.settings.pairs if currency in p.split("_"))
+            rate = self.broker.to_home_rate(currency, via)
+        self.journal.start_budget(account.nav, amount * rate)
+        return account.nav, amount * rate
+
     def _account(self) -> AccountState:
+        """The account as the desk sees it: nav is the budget's equity, not the whole account."""
         account = self.broker.account()
-        budget = account.nav * self.settings.risk.risk_per_trade_pct / 100
+        baseline, budget_home = self.journal.budget() or self._start_budget(account)
+        equity = budget_home + account.nav - baseline
+        per_trade = max(equity, 0) * self.settings.risk.risk_per_trade_pct / 100
         # Trades opened outside the journal are counted at a full per-trade budget, to stay conservative.
         trades = [
-            replace(t, risk_amount=self.journal.risk_for(t.trade_id) or budget) for t in account.open_trades
+            replace(t, risk_amount=self.journal.risk_for(t.trade_id) or per_trade) for t in account.open_trades
         ]
-        return replace(account, open_trades=trades)
+        return replace(account, nav=equity, open_trades=trades)
 
     def check_kill_switch(self, now: datetime | None = None) -> bool:
-        """Record equity and, if drawdown hits the limit, halt the desk and close every trade."""
+        """Record equity and, if the budget is gone or drawdown hits its limit, close everything and halt."""
         now = now or datetime.now(timezone.utc)
         account = self._account()
         self.journal.mark_equity(now, account.nav)
         if self.journal.is_halted():
             return True
-        if not kill_switch_tripped(self.settings.risk, account.nav, self.journal.peak_nav() or account.nav):
+        if not kill_switch_reason(self.settings.risk, account.nav, self.journal.peak_nav() or account.nav):
             return False
         self.journal.set_halted(True)
         if not self.dry_run:

@@ -1,7 +1,9 @@
 """Command line entry point.
 
     tradeboy check    connect to OANDA and print the account and live prices
-    tradeboy resume   clear the kill switch after a human has reviewed what happened
+    tradeboy resume   clear the kill switch after Mithul has approved trading again
+    tradeboy resume --new-budget
+                      also start a fresh budget (capital.starting_amount) from the current account value
 """
 
 from __future__ import annotations
@@ -25,17 +27,25 @@ def check() -> None:
         print(f"  {instrument:8} bid {q.bid:<10} ask {q.ask:<10} spread {q.spread_pips:.1f} pips")
 
 
-def resume() -> None:
+def resume(new_budget: bool) -> None:
     journal = Journal(load_settings().journal_path)
     journal.set_halted(False)
+    if new_budget:
+        # Dropping the budget makes the executor start a new one on its next run.
+        journal.db.execute("DELETE FROM state WHERE key IN ('baseline_nav', 'budget_home')")
+        journal.db.commit()
     print("Kill switch cleared. The desk can trade again.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tradeboy")
     parser.add_argument("command", choices=["check", "resume"])
+    parser.add_argument("--new-budget", action="store_true", help="with resume: start a fresh budget")
     args = parser.parse_args()
-    {"check": check, "resume": resume}[args.command]()
+    if args.command == "check":
+        check()
+    else:
+        resume(args.new_budget)
 
 
 if __name__ == "__main__":

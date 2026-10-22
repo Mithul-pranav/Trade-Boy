@@ -18,7 +18,7 @@ class RiskLimits:
     max_open_trades: int = 3
     max_total_risk_pct: float = 2.0
     daily_loss_limit_pct: float = 2.0
-    max_drawdown_pct: float = 10.0
+    max_drawdown_pct: float | None = None
     news_blackout_minutes: int = 15
     max_spread_pips: float = 3.0
 
@@ -27,6 +27,8 @@ class RiskLimits:
 class Settings:
     pairs: list[str]
     risk: RiskLimits
+    starting_capital: float = 100.0
+    capital_currency: str = "USD"
     scan_interval_minutes: int = 15
     journal_path: Path = field(default=ROOT / "data" / "journal.sqlite3")
 
@@ -52,6 +54,8 @@ def load_settings(path: Path = DEFAULT_SETTINGS) -> Settings:
     return Settings(
         pairs=list(raw["pairs"]),
         risk=RiskLimits(**raw.get("risk", {})),
+        starting_capital=float(raw.get("capital", {}).get("starting_amount", 100)),
+        capital_currency=raw.get("capital", {}).get("currency", "USD"),
         scan_interval_minutes=raw.get("scanner", {}).get("interval_minutes", 15),
         journal_path=journal_path,
     )

@@ -29,8 +29,14 @@ def daily_loss_pct(nav: float, day_start_nav: float) -> float:
     return max(0.0, (day_start_nav - nav) / day_start_nav * 100)
 
 
-def kill_switch_tripped(limits: RiskLimits, nav: float, peak_nav: float) -> bool:
-    return drawdown_pct(nav, peak_nav) >= limits.max_drawdown_pct
+def kill_switch_reason(limits: RiskLimits, nav: float, peak_nav: float) -> str | None:
+    """Why the desk must close everything and halt, or None. nav is the desk's budget equity."""
+    if nav <= 0:
+        return "The original trading budget is used up."
+    dd = drawdown_pct(nav, peak_nav)
+    if limits.max_drawdown_pct is not None and dd >= limits.max_drawdown_pct:
+        return f"Drawdown {dd:.2f}% hit the {limits.max_drawdown_pct}% kill switch."
+    return None
 
 
 def position_units(risk_amount: float, entry: float, stop: float, quote_to_home_loss: float) -> int:
@@ -67,13 +73,9 @@ def evaluate(
     """Check a proposal against every hard limit and size it. Rejections list every reason."""
     if halted:
         return RiskDecision(False, reasons=["Desk is halted by the kill switch; a human must resume it."])
-    if kill_switch_tripped(limits, account.nav, peak_nav):
-        dd = drawdown_pct(account.nav, peak_nav)
-        return RiskDecision(
-            False,
-            reasons=[f"Drawdown {dd:.2f}% hit the {limits.max_drawdown_pct}% kill switch."],
-            kill_switch=True,
-        )
+    stop_reason = kill_switch_reason(limits, account.nav, peak_nav)
+    if stop_reason:
+        return RiskDecision(False, reasons=[stop_reason], kill_switch=True)
 
     reasons: list[str] = []
 

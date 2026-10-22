@@ -4,7 +4,9 @@ import pytest
 
 from tradeboy.config import RiskLimits
 from tradeboy.models import AccountState, CalendarEvent, OpenTrade, Quote, Side, TradeProposal
-from tradeboy.risk import evaluate, position_units
+from dataclasses import replace
+
+from tradeboy.risk import evaluate, kill_switch_reason, position_units
 
 NOW = datetime(2026, 10, 22, 8, 0, tzinfo=timezone.utc)
 LIMITS = RiskLimits()
@@ -91,9 +93,15 @@ def test_rejects_after_daily_loss_limit():
     assert any("Daily loss" in r for r in d.reasons)
 
 
-def test_kill_switch_at_ten_percent_drawdown():
-    d = run(acct=account(nav=89_900), peak=100_000, day_start=89_900)
+def test_kill_switch_when_budget_is_used_up():
+    d = run(acct=account(nav=-0.01), peak=100_000, day_start=1)
     assert not d.approved and d.kill_switch
+    assert "budget is used up" in d.reasons[0]
+
+
+def test_drawdown_kill_switch_is_off_by_default_and_optional():
+    assert kill_switch_reason(LIMITS, 50, 100) is None
+    assert "Drawdown" in kill_switch_reason(replace(LIMITS, max_drawdown_pct=10.0), 89.9, 100)
 
 
 def test_halted_desk_rejects_everything():

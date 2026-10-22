@@ -60,6 +60,7 @@ class OpenTrade:
 
 @dataclass(frozen=True)
 class AccountState:
+    # The executor replaces this with the desk's budget equity before any risk check.
     nav: float
     balance: float
     currency: str

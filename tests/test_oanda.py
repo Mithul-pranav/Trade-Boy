@@ -48,6 +48,15 @@ def test_market_order_sends_stop_and_target_with_pair_precision():
     assert order["timeInForce"] == "FOK"
 
 
+def test_to_home_rate_reads_position_value():
+    def handler(request):
+        return httpx.Response(200, json={"prices": [], "homeConversions": [
+            {"currency": "USD", "accountGain": "1.34", "accountLoss": "1.36", "positionValue": "1.35"},
+        ]})
+
+    assert client(handler).to_home_rate("USD", "EUR_USD") == 1.35
+
+
 def test_candles_skip_incomplete_and_parse_nanoseconds():
     def handler(request):
         return httpx.Response(200, json={"candles": [
@@ -66,4 +75,5 @@ def test_settings_file_loads_defaults():
     s = load_settings()
     assert len(s.pairs) == 7
     assert s.risk.risk_per_trade_pct == 0.5
-    assert s.risk.max_drawdown_pct == 10.0
+    assert s.risk.max_drawdown_pct is None
+    assert (s.starting_capital, s.capital_currency) == (100.0, "USD")

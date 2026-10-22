@@ -16,13 +16,19 @@ See the [design doc](https://claude.ai/artifact/F3iKLT8hej9v6urvSDaKW9) for the 
 
 All tunable numbers live in [`config/settings.yaml`](config/settings.yaml): the pairs traded and the risk limits.
 
+The desk trades a **100 USD budget**, not the whole account. Profits stay in the budget and can be
+traded. Once the original 100 USD is lost, the desk closes everything and halts until Mithul approves
+more (`tradeboy resume --new-budget`). Percentages below are of the budget's current equity.
+
 | Limit | Default |
 | --- | --- |
-| Risk per trade | 0.5% of NAV |
+| Trading budget | 100 USD, converted to SGD once at the start |
+| Risk per trade | 0.5% of budget equity |
 | Open trades | 3 max, one per pair |
-| Total open risk | 2% of NAV |
+| Total open risk | 2% of budget equity |
 | Daily loss | 2% (no new trades until the 17:00 New York rollover) |
-| Drawdown kill switch | 10% from peak: close everything, halt until `tradeboy resume` |
+| Budget gone | Close everything, halt until `tradeboy resume --new-budget` |
+| Drawdown kill switch | Off (optional `max_drawdown_pct`) |
 | News blackout | 15 min either side of high-impact events (needs a calendar feed, phase 2) |
 | Max spread | 3 pips |
 

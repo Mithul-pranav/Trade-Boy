@@ -83,6 +83,18 @@ class OandaClient:
             )
         return quotes
 
+    def to_home_rate(self, currency: str, via_instrument: str) -> float:
+        """Account-currency value of 1 unit of `currency`, read from a pair that contains it."""
+        data = self._request(
+            "GET",
+            f"/v3/accounts/{self.account_id}/pricing",
+            params={"instruments": via_instrument, "includeHomeConversions": "true"},
+        )
+        for c in data.get("homeConversions", []):
+            if c["currency"] == currency:
+                return float(c["positionValue"])
+        raise OandaError(f"No home conversion for {currency} via {via_instrument}")
+
     def candles(self, instrument: str, granularity: str = "M15", count: int = 200) -> list[Candle]:
         data = self._request(
             "GET",

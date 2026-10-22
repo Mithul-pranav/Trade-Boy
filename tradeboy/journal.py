@@ -107,14 +107,31 @@ class Journal:
         ).fetchone()
         return row[0] if row else None
 
-    def is_halted(self) -> bool:
-        row = self.db.execute("SELECT value FROM state WHERE key = 'halted'").fetchone()
-        return bool(row and row[0] == "1")
+    def get_state(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM state WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
 
-    def set_halted(self, halted: bool) -> None:
+    def set_state(self, key: str, value: str) -> None:
         self.db.execute(
-            "INSERT INTO state (key, value) VALUES ('halted', ?)"
+            "INSERT INTO state (key, value) VALUES (?, ?)"
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            ("1" if halted else "0",),
+            (key, value),
         )
         self.db.commit()
+
+    def is_halted(self) -> bool:
+        return self.get_state("halted") == "1"
+
+    def set_halted(self, halted: bool) -> None:
+        self.set_state("halted", "1" if halted else "0")
+
+    def budget(self) -> tuple[float, float] | None:
+        """(account NAV when the budget started, budget in account currency), or None if not started."""
+        baseline, amount = self.get_state("baseline_nav"), self.get_state("budget_home")
+        return (float(baseline), float(amount)) if baseline and amount else None
+
+    def start_budget(self, baseline_nav: float, budget_home: float) -> None:
+        """Begin a fresh budget: equity history restarts so old peaks don't count against it."""
+        self.db.execute("DELETE FROM equity_marks")
+        self.set_state("baseline_nav", repr(baseline_nav))
+        self.set_state("budget_home", repr(budget_home))
