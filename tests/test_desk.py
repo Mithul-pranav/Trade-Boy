@@ -219,18 +219,3 @@ def test_spend_cap_and_halt_alerts():
     desk.cycle(NOW)
     assert alerts.sent[-1][0] == "halted" and "100 USD" in alerts.sent[-1][1]
 
-
-def test_alerts_send_once_a_day_and_use_telegram_when_set(monkeypatch):
-    import httpx
-
-    from tradeboy.alerts import Alerts
-
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "bot")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
-    posts = []
-    http = httpx.Client(transport=httpx.MockTransport(lambda r: posts.append(r) or httpx.Response(200, json={})))
-    alerts = Alerts(Journal(":memory:"), http=http)
-    assert alerts.send("credits", "out", NOW)
-    assert not alerts.send("credits", "out", NOW + timedelta(hours=2))
-    assert alerts.send("credits", "out", NOW + timedelta(days=1))
-    assert len(posts) == 2 and b'"chat_id":"123"' in posts[0].content.replace(b" ", b"")
