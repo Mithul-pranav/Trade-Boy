@@ -42,10 +42,10 @@ def check() -> None:
 
 def _desk(paper: bool):
     from .desk import Desk
-    from .llm import ClaudeLLM
+    from .llm import ClaudeLLM, api_key
 
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-        sys.exit("Set ANTHROPIC_API_KEY in the environment so the agents can reach Claude.")
+    if not (api_key() or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        sys.exit("Set TRADEBOY_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY) in the environment so the agents can reach Claude.")
     settings = load_settings()
     creds = load_credentials()
     if paper and creds.env != "practice":

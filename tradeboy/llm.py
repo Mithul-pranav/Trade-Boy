@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from dataclasses import dataclass
 from typing import Protocol
@@ -64,11 +65,16 @@ def cost(model: str, usage) -> float:
     ) / 1_000_000 + searches * WEB_SEARCH_USD
 
 
+def api_key() -> str | None:
+    """Cloud environments reserve ANTHROPIC_API_KEY for Claude Code itself, so the desk's key can live under its own name."""
+    return os.environ.get("TRADEBOY_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+
+
 class ClaudeLLM:
     """Thread-safe: analysts run in parallel. Usage piles up in `usage` until the desk journals it."""
 
     def __init__(self, client: anthropic.Anthropic | None = None, budget_left_usd: float = float("inf")):
-        self.client = client or anthropic.Anthropic()
+        self.client = client or anthropic.Anthropic(api_key=api_key())
         self.budget_left_usd = budget_left_usd
         self.usage: list[Usage] = []
         self.lock = threading.Lock()

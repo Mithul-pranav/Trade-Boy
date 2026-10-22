@@ -91,7 +91,7 @@ more (`tradeboy resume --new-budget`). Percentages below are of the budget's cur
 pip install -e ".[dev]"
 pytest
 
-# needs OANDA_API_TOKEN (and optionally OANDA_ACCOUNT_ID) and ANTHROPIC_API_KEY; see .env.example
+# needs OANDA_API_TOKEN (and optionally OANDA_ACCOUNT_ID) and TRADEBOY_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY); see .env.example
 python -m tradeboy check              # OANDA connection and prices
 python -m tradeboy debate EUR_USD     # one debate now, printed in full (dry run)
 python -m tradeboy run                # the desk, every 15 minutes, dry run
