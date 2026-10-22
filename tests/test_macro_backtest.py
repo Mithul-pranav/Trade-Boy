@@ -1,10 +1,9 @@
 import math
 
-import numpy as np
-import pandas as pd
 import pytest
 
-pytest.importorskip("pandas")
+np = pytest.importorskip("numpy")  # the research extra: pip install -e ".[research]"
+pd = pytest.importorskip("pandas")
 
 from tradeboy import macro_backtest as mb
 from tradeboy.macro_backtest import Costs, ExitRule
