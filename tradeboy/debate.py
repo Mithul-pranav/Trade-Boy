@@ -18,6 +18,7 @@ from .config import Settings
 from .llm import LLM
 from .market import recent_bars, summarize
 from .models import AccountState, Quote, Side, TradeProposal, currencies, pip_size
+from .quant import LOOKBACK, QuantSeat
 
 ANALYSTS = {
     "technical": (agents.TECHNICAL, agents.TECHNICAL_SCHEMA, 0),
@@ -43,6 +44,9 @@ class Evidence:
     # Inputs that should have been there but weren't, so agents treat silence as missing data, not calm.
     data_gaps: list[str] = field(default_factory=list)
     scanner_reason: str = ""
+    # Raw candles by timeframe and the interest rate gap, for the quant seat (never dumped into prompts).
+    candles: dict[str, list] = field(default_factory=dict)
+    carry_pct: float | None = None
 
 
 @dataclass
@@ -66,12 +70,16 @@ def _headline(h) -> dict:
 
 
 def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "", news=None,
-                    macro=None) -> Evidence:
+                    macro=None, rates=None) -> Evidence:
     quote = broker.quotes([instrument])[instrument]
     evidence = Evidence(instrument, quote, scanner_reason=scanner_reason)
     for granularity, count in TIMEFRAMES.items():
-        candles = broker.candles(instrument, granularity, count)
+        candles = broker.candles(instrument, granularity, max(count, LOOKBACK.get(granularity, 0)))
+        evidence.candles[granularity] = candles
+        candles = candles[-count:]
         evidence.charts[granularity] = {"summary": summarize(instrument, candles), "recent_bars": recent_bars(candles)}
+    if rates is not None:
+        evidence.carry_pct = rates.differential(instrument, now)
     try:
         evidence.position_book = broker.position_book(instrument)
     except Exception as exc:  # positioning data is helpful, not essential
@@ -104,11 +112,13 @@ def _clamp(value, low=0, high=100):
 
 
 class Debate:
-    def __init__(self, settings: Settings, llm: LLM, track_records: dict | None = None):
+    def __init__(self, settings: Settings, llm: LLM, track_records: dict | None = None,
+                 quant: QuantSeat | None = None):
         self.settings = settings
         self.claude = settings.claude
         self.llm = llm
         self.track_records = track_records or {}
+        self.quant = quant
 
     def _ask(self, agent: str, system: str, prompt: str, schema: dict, searches: int = 0, head: bool = False):
         return self.llm.ask(
@@ -163,6 +173,14 @@ class Debate:
             view["confidence"] = _clamp(view["confidence"])
         transcript["independent_views"] = views
 
+        # The quant seat is code, not Claude: its view costs nothing and can't be talked out of its numbers.
+        quant = None
+        if self.quant is not None:
+            quant = self.quant.view(ev.instrument, ev.candles["H1"], ev.candles["H4"], ev.candles["D"], ev.carry_pct)
+            transcript["quant"] = quant
+        # A quant view without a tested edge is a coin flip, so only a significant one counts as a side.
+        quant_side = quant["stance"] if quant and quant["significant"] else None
+
         # 2. Rebuttal round: each reads the others and must answer the strongest argument against it.
         # When all three already agree there is no opposing analyst to answer, so the round is skipped
         # to save cost; the skeptic still attacks the shared view.
@@ -171,11 +189,14 @@ class Debate:
             others = {k: v for k, v in views.items() if k != name}
             prompt = (
                 f"{self._analyst_prompt(name, ev, now)}\n\nYour independent view:\n{_dump(views[name])}\n\n"
-                f"The other analysts' independent views:\n{_dump(others)}\n{agents.REBUTTAL}"
+                f"The other analysts' independent views:\n{_dump(others)}\n"
+                + (f"\nThe quant seat (statistics computed in code from backtests, not an opinion):\n{_dump(quant)}\n"
+                   if quant else "")
+                + agents.REBUTTAL
             )
             return name, self._ask(f"{name}_rebuttal", system, prompt, agents.REBUTTAL_SCHEMA)
 
-        if len({v["stance"] for v in views.values()}) > 1:
+        if len({v["stance"] for v in views.values()} | ({quant_side} if quant_side else set())) > 1:
             with ThreadPoolExecutor(max_workers=len(ANALYSTS)) as pool:
                 rebuttals = dict(pool.map(rebut, ANALYSTS))
         else:
@@ -206,6 +227,7 @@ class Debate:
             "independent_views": views,
             "rebuttals": rebuttals,
             "final_positions": final,
+            **({"quant_seat": quant} if quant else {}),
             "quote": {"bid": ev.quote.bid, "ask": ev.quote.ask},
             "volatility_atr14_pips": {tf: c["summary"]["atr14_pips"] for tf, c in ev.charts.items()},
             "scheduled_events": ev.calendar,
@@ -230,7 +252,7 @@ class Debate:
         head = self._ask("head_of_desk", agents.HEAD, head_prompt, agents.HEAD_SCHEMA, head=True)
         transcript["head_of_desk"] = head
 
-        outcome, proposal = self._enforce(ev, debate_id, skeptic, risk, head)
+        outcome, proposal = self._enforce(ev, debate_id, skeptic, risk, head, quant_side)
         transcript["outcome"] = outcome
         return DebateResult(
             debate_id, ev.instrument, proposal, outcome, transcript,
@@ -263,7 +285,8 @@ class Debate:
             f"{_dump({tf: c['summary']['atr14_pips'] for tf, c in ev.charts.items()})}"
         )
 
-    def _enforce(self, ev: Evidence, debate_id: str, skeptic: dict, risk: dict, head: dict):
+    def _enforce(self, ev: Evidence, debate_id: str, skeptic: dict, risk: dict, head: dict,
+                 quant_side: str | None = None):
         """The checkable rules. Every debate ends in a trade; the rules shape its size and stop.
 
         Returns (outcome, proposal).
@@ -274,8 +297,11 @@ class Debate:
             o["id"] for o in skeptic["objections"] if o["severity"] in ("fatal", "serious") and o["id"] not in answered
         ]
         allowed = risk["long_size"] if side is Side.BUY else risk["short_size"]
-        # Each unanswered fatal or serious objection halves the size.
-        size = max(allowed * _clamp(head["size"], MIN_SIZE, 1.0) * 0.5 ** len(open_objections), MIN_TRADE_SIZE)
+        # Each unanswered fatal or serious objection halves the size, and so does trading against a
+        # quant signal that has a proven out-of-sample edge.
+        against_quant = quant_side is not None and head["side"] != quant_side
+        halvings = len(open_objections) + against_quant
+        size = max(allowed * _clamp(head["size"], MIN_SIZE, 1.0) * 0.5 ** halvings, MIN_TRADE_SIZE)
         stop, stop_note = self._stop(ev, side, head["stop_loss"])
         entry = ev.quote.ask if side is Side.BUY else ev.quote.bid
         target = head["take_profit"]
@@ -293,6 +319,8 @@ class Debate:
         notes = [f"{head['side']} at {size:.0%} size"]
         if open_objections:
             notes.append(f"halved for unanswered objections {', '.join(open_objections)}")
+        if against_quant:
+            notes.append("halved for going against the quant seat's tested signal")
         if stop_note:
             notes.append(stop_note)
         return "trade: " + "; ".join(notes), proposal

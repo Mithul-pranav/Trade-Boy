@@ -57,6 +57,8 @@ class Settings:
     news_sentiment: bool = False
     # FRED series for the macro analyst: dicts with id, name, currency and optional kind.
     fred_series: list[dict] = field(default_factory=list)
+    # The backtest's dates, costs and pass bar, as written in settings.yaml (see backtest.plan_from_settings).
+    backtest: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,7 @@ def load_settings(path: Path = DEFAULT_SETTINGS) -> Settings:
         news_feeds=list(raw.get("news", {}).get("feeds") or []),
         news_sentiment=bool(raw.get("news", {}).get("sentiment", False)),
         fred_series=list(raw.get("macro", {}).get("fred_series") or []),
+        backtest=dict(raw.get("backtest") or {}),
     )
 
 

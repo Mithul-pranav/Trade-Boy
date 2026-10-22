@@ -28,7 +28,7 @@ CREDITS_RETRY = timedelta(hours=6)
 class Desk:
     def __init__(
         self, settings: Settings, broker, journal: Journal, llm, calendar=None, dry_run: bool = True,
-        alerts: Alerts | None = None, news=None, macro=None,
+        alerts: Alerts | None = None, news=None, macro=None, quant=None, rates=None,
     ):
         self.settings = settings
         self.alerts = alerts or Alerts(journal)
@@ -38,6 +38,8 @@ class Desk:
         self.calendar = calendar
         self.news = news
         self.macro = macro
+        self.quant = quant
+        self.rates = rates
         self.dry_run = dry_run
         self.executor = Executor(settings, broker, journal, calendar, dry_run=dry_run)
 
@@ -144,8 +146,8 @@ class Desk:
         log.info("Debate on %s starting.", instrument)
         try:
             evidence = gather_evidence(self.broker, self.calendar, instrument, now, reason, news=self.news,
-                                       macro=self.macro)
-            result = Debate(self.settings, self.llm, self.journal.track_records()).run(
+                                       macro=self.macro, rates=self.rates)
+            result = Debate(self.settings, self.llm, self.journal.track_records(), quant=self.quant).run(
                 evidence, self.executor.budget_account(), now
             )
         except CreditsExhausted as exc:
@@ -192,6 +194,13 @@ class Desk:
             confidence = result.transcript["rebuttals"][agent]["final_confidence"]
             self.journal.record_call(
                 result.debate_id, agent, result.instrument, stance, confidence, mid, now, now + timedelta(hours=hours)
+            )
+        quant = result.transcript.get("quant")
+        if quant:
+            hours = min(max(int(quant["hold_hours"]), 1), 168)
+            self.journal.record_call(
+                result.debate_id, "quant", result.instrument, quant["stance"], quant["confidence"], mid, now,
+                now + timedelta(hours=hours),
             )
         head = result.transcript["head_of_desk"]
         if head["side"] in ("long", "short"):

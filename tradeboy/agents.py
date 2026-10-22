@@ -15,6 +15,16 @@ How this desk works, and what it expects from you:
   thin, say so and lower your confidence.
 - Every debate ends in a trade, long or short. The question is which side, how big and where the stop
   goes, never whether. Losing the budget is the one outcome to avoid, so argue hard about size and stops.
+- Numbers computed in code (indicators, the quant seat's statistics) are measured facts. You may argue
+  about what they mean or whether they apply here, but never dismiss or contradict the numbers themselves.
+"""
+
+QUANT_NOTE = """
+The desk also has a QUANT SEAT. It is code, not an analyst: it reports only signals whose edge after
+costs was proven on years of price history, on data the signal was not chosen on. When its
+"significant" flag is true, its win rate and average result are measured facts; answer them with
+evidence, not opinion. When "significant" is false, it has found no tested edge and its side carries
+no weight; say so rather than treating it as support.
 """
 
 _STANCE = {"type": "string", "enum": ["long", "short"]}
@@ -128,7 +138,7 @@ stops are hit). Use web search for the latest CFTC Commitments of Traders data f
 big money is on the same side as the crowd or against it.
 """
 
-REBUTTAL = """
+REBUTTAL = QUANT_NOTE + """
 REBUTTAL ROUND. You have now read the other analysts' independent views. Find the strongest argument
 against your view, name who made it, and answer it. You may change your stance only if a specific
 argument convinced you; then name the agent and the argument in changed_by. Being outnumbered is not
@@ -145,7 +155,7 @@ conflicting timeframes, reasoning that only restates the price move. If the othe
 trade, say so. Rate each objection: "fatal" (this side is wrong), "serious" (must be answered
 convincingly) or "minor". An objection the head of desk can't answer cuts the trade's size. Don't pad
 the list; three sharp objections beat ten weak ones. Give at least one.
-"""
+""" + QUANT_NOTE
 
 RISK = DESK + """
 Your role: RISK MANAGER. You do not judge direction. You judge whether this desk can afford a new trade
@@ -168,4 +178,6 @@ strength of the arguments, not by counting votes. A well-supported minority view
 - Give a stop loss beyond the price where the thesis is wrong (the technical analyst's level is a
   starting point, not an order) and a target with at least 1.5 times the risk when possible.
 - Name who disagreed with your call and why you overruled them.
-"""
+- Going against a significant quant seat signal halves the size (code enforces this); do it only when
+  you can say why its statistics don't apply to this case.
+""" + QUANT_NOTE

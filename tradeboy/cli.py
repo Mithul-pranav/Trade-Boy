@@ -9,6 +9,8 @@
     tradeboy status   budget, kill switch, API spend, agreement rate and track records
     tradeboy test-alert
                       send a test message to Telegram (finds the chat ID on first use)
+    tradeboy history  download years of OANDA candles (bid and ask) and interest rates for backtests
+    tradeboy backtest test the code screen and the quant seat's signals on that history, write the report
     tradeboy resume   clear the kill switch after Mithul has approved trading again
     tradeboy resume --new-budget
                       also start a fresh budget (capital.starting_amount) from the current account value
@@ -63,8 +65,12 @@ def _desk(paper: bool):
     news = NewsFeeds([Feed.from_config(f) for f in settings.news_feeds], sentiment=sentiment)
     macro = FredData([Series.from_config(s) for s in settings.fred_series])
     broker = OandaClient(creds)
+    from .history import ShortRates
+    from .quant import QuantSeat, load_validation
+
     return Desk(settings, broker, Journal(settings.journal_path), ClaudeLLM(), calendar, dry_run=not paper,
-                news=news if settings.news_feeds else None, macro=macro if settings.fred_series else None)
+                news=news if settings.news_feeds else None, macro=macro if settings.fred_series else None,
+                quant=QuantSeat(load_validation()), rates=ShortRates.load())
 
 
 def _setup_logging() -> None:
@@ -158,13 +164,42 @@ def resume(new_budget: bool) -> None:
     print("Kill switch cleared. The desk can trade again.")
 
 
+def download_history(since: str) -> None:
+    from . import history
+
+    settings = load_settings()
+    client = OandaClient(load_credentials())
+    start = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+    for pair in settings.pairs:
+        for granularity in ("H1", "H4", "D"):
+            history.download(client, pair, granularity, start)
+            print(f"{pair} {granularity}: {len(history.load(pair, granularity)):,} candles")
+    history.download_rates()
+    print("Interest rates saved.")
+
+
+def backtest() -> None:
+    from . import backtest as bt
+
+    settings = load_settings()
+    result = bt.run(bt.plan_from_settings(settings))
+    report = ROOT / "reports" / "backtest.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(bt.render_markdown(result))
+    for check in result["pass_bar"]:
+        print(f"  {'pass' if check['passed'] else 'FAIL'}  {check['check']}: {check['got']} (needs {check['needs']})")
+    print(f"Pass bar {'PASSED' if result['passed'] else 'NOT passed'}. Full report: {report}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tradeboy")
-    parser.add_argument("command", choices=["check", "run", "debate", "status", "test-alert", "resume"])
+    parser.add_argument("command", choices=["check", "run", "debate", "status", "test-alert", "resume", "history",
+                                            "backtest"])
     parser.add_argument("instrument", nargs="?", help="with debate: the pair, e.g. EUR_USD")
     parser.add_argument("--paper", action="store_true", help="place trades on the OANDA practice account")
     parser.add_argument("--once", action="store_true", help="with run: one cycle, then exit")
     parser.add_argument("--new-budget", action="store_true", help="with resume: start a fresh budget")
+    parser.add_argument("--since", default="2016-01-01", help="with history: first day to download")
     args = parser.parse_args()
     if args.command == "check":
         check()
@@ -176,6 +211,10 @@ def main() -> None:
         debate(args.instrument, args.paper)
     elif args.command == "test-alert":
         test_alert()
+    elif args.command == "history":
+        download_history(args.since)
+    elif args.command == "backtest":
+        backtest()
     elif args.command == "status":
         status()
     else:
