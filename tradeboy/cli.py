@@ -7,6 +7,8 @@
     tradeboy debate EUR_USD [--paper]
                       run one debate on a pair now and print it
     tradeboy status   budget, kill switch, API spend, agreement rate and track records
+    tradeboy test-alert
+                      send a test message to Telegram (finds the chat ID on first use)
     tradeboy resume   clear the kill switch after Mithul has approved trading again
     tradeboy resume --new-budget
                       also start a fresh budget (capital.starting_amount) from the current account value
@@ -135,6 +137,17 @@ def status() -> None:
               f"{record['avg_pips']:+} pips on average")
 
 
+def test_alert() -> None:
+    from .alerts import AlertError, Alerts
+
+    alerts = Alerts(Journal(load_settings().journal_path))
+    try:
+        alerts.telegram("Test alert. If you can read this, alerts work.")
+    except AlertError as exc:
+        sys.exit(str(exc))
+    print(f"Sent a test alert to Telegram chat {alerts.chat_id}.")
+
+
 def resume(new_budget: bool) -> None:
     journal = Journal(load_settings().journal_path)
     journal.set_halted(False)
@@ -147,7 +160,7 @@ def resume(new_budget: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tradeboy")
-    parser.add_argument("command", choices=["check", "run", "debate", "status", "resume"])
+    parser.add_argument("command", choices=["check", "run", "debate", "status", "test-alert", "resume"])
     parser.add_argument("instrument", nargs="?", help="with debate: the pair, e.g. EUR_USD")
     parser.add_argument("--paper", action="store_true", help="place trades on the OANDA practice account")
     parser.add_argument("--once", action="store_true", help="with run: one cycle, then exit")
@@ -161,6 +174,8 @@ def main() -> None:
         if not args.instrument:
             parser.error("debate needs a pair, e.g. tradeboy debate EUR_USD")
         debate(args.instrument, args.paper)
+    elif args.command == "test-alert":
+        test_alert()
     elif args.command == "status":
         status()
     else:

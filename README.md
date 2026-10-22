@@ -58,8 +58,12 @@ enforces what can be checked:
 
 ### Alerts
 
-Alerts go to the log, and to Telegram when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set. Each kind is
-sent at most once a day: budget gone (desk halted), Claude credits out, spend cap reached, agreement alarm.
+Alerts go to the log, and to Telegram when `TRADEBOY_TELEGRAM_BOT_TOKEN` is set. Each kind is sent at most
+once a day: budget gone (desk halted), Claude credits out, spend cap reached, agreement alarm.
+
+To set up Telegram: create a bot with @BotFather, set its token as `TRADEBOY_TELEGRAM_BOT_TOKEN`, send the bot
+any message, then run `python -m tradeboy test-alert`. The chat ID is found from that message and remembered;
+`TRADEBOY_TELEGRAM_CHAT_ID` can pin it instead. The desk's server must be able to reach `api.telegram.org`.
 
 ### Files
 
