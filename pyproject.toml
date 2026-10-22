@@ -9,6 +9,8 @@ dependencies = ["anthropic>=2.1", "httpx>=0.27", "pyyaml>=6"]
 dev = ["pytest>=8"]
 # Local FinBERT headline tone (news.sentiment in settings). CPU-only torch keeps the download smaller:
 # pip install torch --index-url https://download.pytorch.org/whl/cpu first.
+# The slow macro research backtest (tradeboy macro-backtest).
+research = ["numpy>=1.26", "pandas>=2.1"]
 sentiment = ["transformers>=4.40", "torch>=2.2"]
 
 [project.scripts]
