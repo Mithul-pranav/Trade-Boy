@@ -31,6 +31,27 @@ risk:
   max_drawdown_pct:
   news_blackout_minutes: 15    # no new trades this close to a high-impact release
   max_spread_pips: 3.0         # skip a pair while its spread is wider than this
+  min_stop_pips: 5.0           # a tighter stop would make the position too big for the budget
+
+# The Claude agents. Debates only run when the free code screen finds a setup.
+claude:
+  scanner_model: claude-haiku-5-5    # only asked when several pairs pass the screen at once
+  analyst_model: claude-sonnet-5-5   # technical, macro, positioning, skeptic, risk manager
+  head_model: claude-opus-5-5        # the final call gets the strongest model
+  analyst_effort: medium
+  head_effort: high
+  # API spend caps in USD. Hitting either pauses debates until it resets; trading limits still apply.
+  daily_budget_usd: 0.90             # rolling 24 hours; about 22 trading days fit in the monthly cap
+  monthly_budget_usd: 20.0           # Mithul's prepaid credits
+  max_debates_per_day: 3
+  max_pairs_per_scan: 1
+  debate_cooldown_hours: 4           # don't re-debate the same pair sooner than this
+  web_searches_per_agent: 2          # macro and positioning analysts search the web for news and COT data
+
+# Economic calendar for the news blackout (weekly JSON in the Forex Factory export format).
+# When placing trades, an unreachable calendar blocks new trades rather than skipping the check.
+calendar:
+  url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
 journal:
   path: data/journal.sqlite3

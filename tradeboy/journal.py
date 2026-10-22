@@ -46,6 +46,41 @@ CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS debates (
+    id TEXT PRIMARY KEY,
+    ts TEXT NOT NULL,
+    trading_day TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    analysts_agreed_first INTEGER NOT NULL,
+    analysts_agreed_last INTEGER NOT NULL,
+    stance_changes INTEGER NOT NULL,
+    transcript TEXT NOT NULL
+);
+-- Every directional call an analyst makes, scored once its time horizon has passed.
+CREATE TABLE IF NOT EXISTS agent_calls (
+    debate_id TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    stance TEXT NOT NULL,
+    confidence INTEGER NOT NULL,
+    price REAL NOT NULL,
+    ts TEXT NOT NULL,
+    due TEXT NOT NULL,
+    result_pips REAL,
+    PRIMARY KEY (debate_id, agent)
+);
+CREATE TABLE IF NOT EXISTS api_usage (
+    ts TEXT NOT NULL,
+    month TEXT NOT NULL,
+    debate_id TEXT,
+    agent TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    web_searches INTEGER NOT NULL,
+    cost_usd REAL NOT NULL
+);
 """
 
 
@@ -124,6 +159,90 @@ class Journal:
 
     def set_halted(self, halted: bool) -> None:
         self.set_state("halted", "1" if halted else "0")
+
+    def record_debate(
+        self, debate_id: str, ts: datetime, instrument: str, outcome: str,
+        agreed_first: bool, agreed_last: bool, stance_changes: int, transcript: dict,
+    ) -> None:
+        self.db.execute(
+            "INSERT INTO debates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (debate_id, ts.isoformat(), trading_day(ts), instrument, outcome, int(agreed_first),
+             int(agreed_last), stance_changes, json.dumps(transcript)),
+        )
+        self.db.commit()
+
+    def debates_today(self, ts: datetime) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM debates WHERE trading_day = ?", (trading_day(ts),)).fetchone()[0]
+
+    def agreement_rate(self, last: int = 20) -> tuple[float, int] | None:
+        """Share of recent debates where all analysts started on the same side, and how many debates."""
+        rows = self.db.execute(
+            "SELECT analysts_agreed_first FROM debates ORDER BY ts DESC LIMIT ?", (last,)
+        ).fetchall()
+        return (sum(r[0] for r in rows) / len(rows), len(rows)) if rows else None
+
+    def record_call(
+        self, debate_id: str, agent: str, instrument: str, stance: str, confidence: int,
+        price: float, ts: datetime, due: datetime,
+    ) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO agent_calls (debate_id, agent, instrument, stance, confidence, price, ts, due)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (debate_id, agent, instrument, stance, confidence, price, ts.isoformat(), due.isoformat()),
+        )
+        self.db.commit()
+
+    def calls_due(self, ts: datetime) -> list[tuple[str, str, str, str, float, datetime]]:
+        rows = self.db.execute(
+            "SELECT debate_id, agent, instrument, stance, price, due FROM agent_calls"
+            " WHERE result_pips IS NULL AND due <= ?", (ts.isoformat(),),
+        ).fetchall()
+        return [(*r[:5], datetime.fromisoformat(r[5])) for r in rows]
+
+    def score_call(self, debate_id: str, agent: str, result_pips: float) -> None:
+        self.db.execute(
+            "UPDATE agent_calls SET result_pips = ? WHERE debate_id = ? AND agent = ?",
+            (result_pips, debate_id, agent),
+        )
+        self.db.commit()
+
+    def track_records(self, last: int = 50) -> dict[str, dict]:
+        """Per agent: how many recent scored calls, share that were right, and average pips."""
+        records = {}
+        agents = [r[0] for r in self.db.execute("SELECT DISTINCT agent FROM agent_calls").fetchall()]
+        for agent in agents:
+            results = [r[0] for r in self.db.execute(
+                "SELECT result_pips FROM agent_calls WHERE agent = ? AND result_pips IS NOT NULL"
+                " ORDER BY ts DESC LIMIT ?", (agent, last),
+            ).fetchall()]
+            if results:
+                records[agent] = {
+                    "scored_calls": len(results),
+                    "hit_rate_pct": round(100 * sum(r > 0 for r in results) / len(results)),
+                    "avg_pips": round(sum(results) / len(results), 1),
+                }
+        return records
+
+    def record_usage(self, ts: datetime, debate_id: str | None, usage: list) -> None:
+        self.db.executemany(
+            "INSERT INTO api_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(ts.isoformat(), ts.strftime("%Y-%m"), debate_id, u.agent, u.model, u.input_tokens,
+              u.output_tokens, u.web_searches, u.cost_usd) for u in usage],
+        )
+        self.db.commit()
+
+    def month_spend(self, ts: datetime) -> float:
+        row = self.db.execute("SELECT SUM(cost_usd) FROM api_usage WHERE month = ?", (ts.strftime("%Y-%m"),))
+        return row.fetchone()[0] or 0.0
+
+    def day_spend(self, ts: datetime) -> float:
+        start = (ts - timedelta(hours=24)).isoformat()
+        row = self.db.execute("SELECT SUM(cost_usd) FROM api_usage WHERE ts > ?", (start,))
+        return row.fetchone()[0] or 0.0
+
+    def last_debate(self, instrument: str) -> datetime | None:
+        row = self.db.execute("SELECT MAX(ts) FROM debates WHERE instrument = ?", (instrument,)).fetchone()
+        return datetime.fromisoformat(row[0]) if row[0] else None
 
     def budget(self) -> tuple[float, float] | None:
         """(account NAV when the budget started, budget in account currency), or None if not started."""

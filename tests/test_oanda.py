@@ -77,3 +77,30 @@ def test_settings_file_loads_defaults():
     assert s.risk.risk_per_trade_pct == 0.5
     assert s.risk.max_drawdown_pct is None
     assert (s.starting_capital, s.capital_currency) == (100.0, "USD")
+
+
+def test_without_token_sends_no_auth_and_finds_the_account():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"accounts": [{"id": "101-003-9-001", "tags": []}]})
+
+    from tradeboy.config import OandaCredentials as Creds
+    creds = Creds(token="", account_id="")
+    oanda = OandaClient(creds, http=httpx.Client(base_url=creds.base_url, transport=httpx.MockTransport(handler)))
+    assert oanda.account_id == "101-003-9-001"
+    assert seen[0].url.path == "/v3/accounts"
+
+
+def test_position_book_shares_and_trapped_traders():
+    def handler(request):
+        return httpx.Response(200, json={"positionBook": {"time": "t", "price": "1.1000", "buckets": [
+            {"price": "1.0900", "longCountPercent": "30", "shortCountPercent": "10"},
+            {"price": "1.1100", "longCountPercent": "40", "shortCountPercent": "20"},
+        ]}})
+
+    book = client(handler).position_book("EUR_USD")
+    assert (book["retail_long_pct"], book["retail_short_pct"]) == (70.0, 30.0)
+    assert book["longs_underwater_pct"] == 40.0  # bought above the current price
+    assert book["shorts_underwater_pct"] == 10.0  # sold below it

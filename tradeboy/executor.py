@@ -71,6 +71,9 @@ class Executor:
         ]
         return replace(account, nav=equity, open_trades=trades)
 
+    def budget_account(self) -> AccountState:
+        return self._account()
+
     def check_kill_switch(self, now: datetime | None = None) -> bool:
         """Record equity and, if the budget is gone or drawdown hits its limit, close everything and halt."""
         now = now or datetime.now(timezone.utc)

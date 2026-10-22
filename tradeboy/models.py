@@ -77,6 +77,8 @@ class TradeProposal:
     take_profit: float | None = None
     rationale: str = ""
     debate_id: str | None = None
+    # Share of the normal per-trade risk to use. The risk manager can shrink a trade, never grow it.
+    risk_fraction: float = 1.0
 
 
 @dataclass(frozen=True)

@@ -136,3 +136,15 @@ def test_news_outside_window_or_low_impact_is_fine():
         CalendarEvent(NOW + timedelta(minutes=5), "JPY", "BoJ", "high"),
     ]
     assert run(events=events).approved
+
+
+def test_stop_too_close_is_rejected():
+    decision = run(TradeProposal("EUR_USD", Side.BUY, stop_loss=1.0998))
+    assert not decision.approved
+    assert any("minimum" in r for r in decision.reasons)
+
+
+def test_risk_fraction_shrinks_but_never_grows_the_position():
+    full = run().units
+    assert run(TradeProposal("EUR_USD", Side.BUY, stop_loss=1.0951, risk_fraction=0.5)).units == pytest.approx(full / 2, abs=1)
+    assert run(TradeProposal("EUR_USD", Side.BUY, stop_loss=1.0951, risk_fraction=3.0)).units == full

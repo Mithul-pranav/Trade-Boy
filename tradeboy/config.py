@@ -21,6 +21,24 @@ class RiskLimits:
     max_drawdown_pct: float | None = None
     news_blackout_minutes: int = 15
     max_spread_pips: float = 3.0
+    min_stop_pips: float = 5.0
+
+
+@dataclass(frozen=True)
+class ClaudeSettings:
+    # Routine roles run on a mid-priced model; only the head of desk gets the strongest one.
+    scanner_model: str = "claude-haiku-5-5"
+    analyst_model: str = "claude-sonnet-5-5"
+    head_model: str = "claude-opus-5-5"
+    analyst_effort: str = "medium"
+    head_effort: str = "high"
+    # Spend caps in USD. Hitting either pauses debates (trading limits and open trades are unaffected).
+    daily_budget_usd: float = 0.90
+    monthly_budget_usd: float = 20.0
+    max_debates_per_day: int = 3
+    max_pairs_per_scan: int = 1
+    debate_cooldown_hours: float = 4.0
+    web_searches_per_agent: int = 2
 
 
 @dataclass(frozen=True)
@@ -31,6 +49,8 @@ class Settings:
     capital_currency: str = "USD"
     scan_interval_minutes: int = 15
     journal_path: Path = field(default=ROOT / "data" / "journal.sqlite3")
+    claude: ClaudeSettings = field(default_factory=ClaudeSettings)
+    calendar_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,14 +78,15 @@ def load_settings(path: Path = DEFAULT_SETTINGS) -> Settings:
         capital_currency=raw.get("capital", {}).get("currency", "USD"),
         scan_interval_minutes=raw.get("scanner", {}).get("interval_minutes", 15),
         journal_path=journal_path,
+        claude=ClaudeSettings(**raw.get("claude", {})),
+        calendar_url=raw.get("calendar", {}).get("url"),
     )
 
 
 def load_credentials() -> OandaCredentials:
+    """The token may be left empty where a proxy adds it; an empty account ID is looked up from OANDA."""
     token = os.environ.get("OANDA_API_TOKEN", "")
     account_id = os.environ.get("OANDA_ACCOUNT_ID", "")
-    if not token or not account_id:
-        raise RuntimeError("Set OANDA_API_TOKEN and OANDA_ACCOUNT_ID in the environment.")
     env = os.environ.get("OANDA_ENV", "practice")
     if env not in ("practice", "live"):
         raise RuntimeError("OANDA_ENV must be 'practice' or 'live'.")
