@@ -1,0 +1,26 @@
+# Trade-Boy settings. Every number here is a starting default and can be changed.
+
+pairs:
+  - EUR_USD
+  - GBP_USD
+  - USD_JPY
+  - AUD_USD
+  - USD_CAD
+  - USD_CHF
+  - NZD_USD
+
+scanner:
+  interval_minutes: 15
+
+# Hard limits enforced in code. No agent can override these.
+risk:
+  risk_per_trade_pct: 0.5      # max loss if the stop loss is hit, as % of NAV
+  max_open_trades: 3
+  max_total_risk_pct: 2.0      # combined risk of all open trades, as % of NAV
+  daily_loss_limit_pct: 2.0    # no new trades for the rest of the trading day
+  max_drawdown_pct: 10.0       # kill switch: close everything and halt until a human resumes
+  news_blackout_minutes: 15    # no new trades this close to a high-impact release
+  max_spread_pips: 3.0         # skip a pair while its spread is wider than this
+
+journal:
+  path: data/journal.sqlite3
