@@ -33,6 +33,21 @@ def test_parses_rss_and_atom():
     assert parse_feed(FX_ATOM)[0][0] == datetime(2026, 10, 22, 9, 30, tzinfo=timezone.utc)
 
 
+RDF_RSS = """<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+ xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel><title>Bank of Canada</title></channel>
+<item rdf:about="https://www.bankofcanada.ca/a"><title>Bank of Canada maintains policy rate</title>
+<link>https://www.bankofcanada.ca/a</link><dc:date>2026-10-21T14:00:00+00:00</dc:date></item>
+</rdf:RDF>"""
+
+
+def test_parses_rss_1_0_rdf_feeds():
+    item = parse_feed(RDF_RSS)[0]
+    assert item.title == "Bank of Canada maintains policy rate"
+    assert item.time == datetime(2026, 10, 21, 14, 0, tzinfo=timezone.utc)
+    assert item.link == "https://www.bankofcanada.ca/a"
+
+
 def test_tags_central_bank_items_and_matches_general_feeds_by_keyword():
     news = feeds()
     jpy = news.headlines({"USD", "JPY"}, NOW)

@@ -85,7 +85,7 @@ any message, then run `python -m tradeboy test-alert`. The chat ID is found from
   then `news.sentiment: true`). Off by default: torch needs about 1 GB of RAM.
 
 The news and macro feeds need these hosts reachable from the server: news.google.com,
-fred.stlouisfed.org, the central bank sites in `config/settings.yaml`, www.fxstreet.com,
+fred.stlouisfed.org, the central bank sites in `config/settings.yaml`,
 nfs.faireconomy.media (calendar), and huggingface.co if FinBERT is on (one model download).
 
 ## Settings
