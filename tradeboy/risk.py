@@ -14,6 +14,7 @@ from .models import (
     Side,
     TradeProposal,
     currencies,
+    pip_size,
 )
 
 
@@ -88,6 +89,9 @@ def evaluate(
         reasons.append("Stop loss must be below the entry price on a buy.")
     if proposal.side is Side.SELL and proposal.stop_loss <= entry:
         reasons.append("Stop loss must be above the entry price on a sell.")
+    stop_pips = abs(entry - proposal.stop_loss) / pip_size(proposal.instrument)
+    if stop_pips < limits.min_stop_pips:
+        reasons.append(f"Stop loss is {stop_pips:.1f} pips away; the minimum is {limits.min_stop_pips}.")
     if proposal.take_profit is not None:
         if proposal.side is Side.BUY and proposal.take_profit <= entry:
             reasons.append("Take profit must be above the entry price on a buy.")
@@ -106,7 +110,7 @@ def evaluate(
     if event:
         reasons.append(f"High-impact news within {limits.news_blackout_minutes} min: {event.currency} {event.title}.")
 
-    risk_budget = account.nav * limits.risk_per_trade_pct / 100
+    risk_budget = account.nav * limits.risk_per_trade_pct / 100 * min(max(proposal.risk_fraction, 0.0), 1.0)
     units = position_units(risk_budget, entry, proposal.stop_loss, quote.quote_to_home_loss)
     risk_amount = units * abs(entry - proposal.stop_loss) * quote.quote_to_home_loss
     if units < 1:

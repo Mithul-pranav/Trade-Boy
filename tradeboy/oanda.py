@@ -22,15 +22,17 @@ def _parse_time(value: str) -> datetime:
 
 class OandaClient:
     def __init__(self, creds: OandaCredentials, http: httpx.Client | None = None):
-        self.account_id = creds.account_id
-        self.http = http or httpx.Client(
-            base_url=creds.base_url,
-            headers={
-                "Authorization": f"Bearer {creds.token}",
-                "Accept-Datetime-Format": "RFC3339",
-            },
-            timeout=20,
-        )
+        headers = {"Accept-Datetime-Format": "RFC3339"}
+        if creds.token:
+            headers["Authorization"] = f"Bearer {creds.token}"
+        self.http = http or httpx.Client(base_url=creds.base_url, headers=headers, timeout=20)
+        self.account_id = creds.account_id or self._only_account()
+
+    def _only_account(self) -> str:
+        accounts = self._request("GET", "/v3/accounts")["accounts"]
+        if len(accounts) != 1:
+            raise OandaError(f"Found {len(accounts)} accounts; set OANDA_ACCOUNT_ID to pick one.")
+        return accounts[0]["id"]
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
         resp = self.http.request(method, path, **kwargs)
@@ -113,6 +115,35 @@ class OandaClient:
             for c in data["candles"]
             if c.get("complete", True)
         ]
+
+    def price_at(self, instrument: str, when: datetime) -> float | None:
+        """Mid close of the first 5-minute candle at or after `when`, or None if it hasn't happened yet."""
+        data = self._request(
+            "GET",
+            f"/v3/instruments/{instrument}/candles",
+            params={"granularity": "M5", "count": 1, "price": "M", "from": when.isoformat()},
+        )
+        candles = [c for c in data["candles"] if c.get("complete", True)]
+        return float(candles[0]["mid"]["c"]) if candles else None
+
+    def position_book(self, instrument: str) -> dict:
+        """OANDA clients' open positions near the current price: share of long and short traders."""
+        book = self._request("GET", f"/v3/instruments/{instrument}/positionBook")["positionBook"]
+        price = float(book["price"])
+        long_pct = sum(float(b["longCountPercent"]) for b in book["buckets"])
+        short_pct = sum(float(b["shortCountPercent"]) for b in book["buckets"])
+        # Where the crowd is trapped: positions held at a loss relative to the current price.
+        long_underwater = sum(float(b["longCountPercent"]) for b in book["buckets"] if float(b["price"]) > price)
+        short_underwater = sum(float(b["shortCountPercent"]) for b in book["buckets"] if float(b["price"]) < price)
+        total = long_pct + short_pct or 1.0
+        return {
+            "time": book["time"],
+            "price": price,
+            "retail_long_pct": round(100 * long_pct / total, 1),
+            "retail_short_pct": round(100 * short_pct / total, 1),
+            "longs_underwater_pct": round(100 * long_underwater / total, 1),
+            "shorts_underwater_pct": round(100 * short_underwater / total, 1),
+        }
 
     def market_order(
         self, instrument: str, units: int, stop_loss: float, take_profit: float | None = None
