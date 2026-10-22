@@ -38,7 +38,7 @@ enforces what can be checked:
    picks a share of that. Nobody can grow a trade past the normal per-trade risk.
 6. **Every order has a stop.** If the head of desk's stop is on the wrong side or missing, code sets one at 1.5x
    the hourly ATR; a stop inside the 5-pip minimum is widened to it. Then the hard limits from phase 1 apply
-   (per-trade risk, daily loss cap, spread, news blackout, max open trades, the 100 USD kill switch), and these
+   (per-trade risk, daily loss cap, spread, news blackout, max open trades, the 1000 USD kill switch), and these
    can still stop an order.
 7. **Track records.** Every analyst's call is scored in pips once its own time horizon passes, and the head
    of desk sees who has actually been right.
@@ -47,6 +47,23 @@ enforces what can be checked:
    round, and a head of desk who trades against it gets half the size. When it has none, it says so plainly.
 9. **Agreement alarm.** If the analysts start on the same side in 85% or more of the last 20 debates, the
    desk raises an alert: they may be echoing each other.
+
+### Getting out of trades
+
+Every trade gets an exit plan when it opens, written by the head of desk and stored with the trade:
+a time limit (`hold_hours`, after which code closes it), an exit type (`target`, `trailing_stop` or
+`time_limit`), why the trade exists and what would make it close early. Every scan, `tradeboy/exits.py`:
+
+- closes trades whose time limit has passed;
+- for `trailing_stop` trades, moves the stop at OANDA to 1R behind price once the trade is 1R in profit
+  (R = entry to the original stop), and never moves it back;
+- asks one agent (Sonnet, low effort) to hold or close when something changes: price halfway to the stop,
+  or a high-impact event for either currency within the hour. Each trigger is reviewed once per trade,
+  and only when the API spend caps allow;
+- records trades that closed at OANDA (stop or target) and reports the result.
+
+The stop stays at OANDA the whole time, so trades are protected while the desk is offline. Telegram gets a
+message when a trade opens, is re-reviewed or closes.
 
 ### Keeping the Claude bill small
 
@@ -137,13 +154,13 @@ enters and exits today and a proposal for managing open trades.
 
 All tunable numbers live in [`config/settings.yaml`](config/settings.yaml): the pairs traded and the risk limits.
 
-The desk trades a **100 USD budget**, not the whole account. Profits stay in the budget and can be
-traded. Once the original 100 USD is lost, the desk closes everything and halts until Mithul approves
+The desk trades a **1000 USD budget**, not the whole account. Profits stay in the budget and can be
+traded. Once the original 1000 USD is lost, the desk closes everything and halts until Mithul approves
 more (`tradeboy resume --new-budget`). Percentages below are of the budget's current equity.
 
 | Limit | Default |
 | --- | --- |
-| Trading budget | 100 USD, converted to SGD once at the start |
+| Trading budget | 1000 USD, converted to SGD once at the start |
 | Risk per trade | 0.5% of budget equity |
 | Open trades | 3 max, one per pair |
 | Total open risk | 2% of budget equity |

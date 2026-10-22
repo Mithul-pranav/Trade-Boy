@@ -76,7 +76,7 @@ def test_settings_file_loads_defaults():
     assert len(s.pairs) == 7
     assert s.risk.risk_per_trade_pct == 0.5
     assert s.risk.max_drawdown_pct is None
-    assert (s.starting_capital, s.capital_currency) == (100.0, "USD")
+    assert (s.starting_capital, s.capital_currency) == (1000.0, "USD")
 
 
 def test_without_token_sends_no_auth_and_finds_the_account():

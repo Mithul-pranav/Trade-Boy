@@ -31,8 +31,8 @@ def test_dry_run_debate_is_journaled_but_places_no_order():
 def test_paper_debate_places_order_sized_by_risk_manager():
     desk, broker, _ = make(dry_run=False)
     desk.debate("EUR_USD", NOW)
-    # The risk manager allowed half size for a long: 0.325 SGD / (0.0051 * 1.35) = 47 units.
-    assert broker.orders[0][1] == 47
+    # The risk manager allowed half size for a long: 3.25 SGD / (0.0051 * 1.35) = 472 units.
+    assert broker.orders[0][1] == 472
 
 
 def test_too_tight_stop_is_widened_so_the_order_still_goes_in():
@@ -215,7 +215,7 @@ def test_spend_cap_and_halt_alerts():
     desk.debate("EUR_USD", NOW)
     assert alerts.sent[-1][0] == "spend_cap" and "daily" in alerts.sent[-1][1]
     desk.executor.check_kill_switch(NOW)  # starts the budget
-    broker.nav -= 200  # the whole 130 SGD budget is gone
+    broker.nav -= 2000  # the whole 1300 SGD budget is gone
     desk.cycle(NOW)
-    assert alerts.sent[-1][0] == "halted" and "100 USD" in alerts.sent[-1][1]
+    assert alerts.sent[-1][0] == "halted" and "1000 USD" in alerts.sent[-1][1]
 

@@ -79,6 +79,11 @@ class TradeProposal:
     debate_id: str | None = None
     # Share of the normal per-trade risk to use. The risk manager can shrink a trade, never grow it.
     risk_fraction: float = 1.0
+    # The exit plan, decided at entry: the trade is closed after hold_hours whatever happens, and
+    # exit_type says how it gets out before that ("target", "trailing_stop" or "time_limit").
+    hold_hours: int = 24
+    exit_type: str = "time_limit"
+    exit_reason: str = ""
 
 
 @dataclass(frozen=True)

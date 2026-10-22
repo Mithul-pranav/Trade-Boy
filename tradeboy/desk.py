@@ -10,6 +10,7 @@ from . import agents
 from .config import Settings
 from .debate import Debate, DebateResult, gather_evidence
 from .executor import Executor
+from .exits import TradeManager
 from .journal import Journal
 from .alerts import Alerts
 from .llm import AgentError, CreditsExhausted, SpendCapReached
@@ -42,6 +43,7 @@ class Desk:
         self.rates = rates
         self.dry_run = dry_run
         self.executor = Executor(settings, broker, journal, calendar, dry_run=dry_run)
+        self.trades = TradeManager(settings, broker, journal, llm, self.alerts, calendar, news, dry_run=dry_run)
 
     # -- the cycle -----------------------------------------------------------------------------
 
@@ -53,11 +55,20 @@ class Desk:
         if self.executor.check_kill_switch(now):
             self.alerts.send(
                 "halted",
-                "HALTED. The original 100 USD trading budget is gone, so every trade is closed and nothing "
+                f"HALTED. The original {self.settings.starting_capital:g} {self.settings.capital_currency} trading "
+                "budget is gone, so every trade is closed and nothing "
                 "new will open. Trading resumes only with your approval (tradeboy resume --new-budget).",
                 now,
             )
             return
+        try:
+            self.trades.manage(now, can_spend=lambda: self._budget_ok(now))
+        except CreditsExhausted as exc:
+            self._credits_out(exc, now)
+        except Exception:  # looking after open trades must not stop new ones; their stops are at OANDA
+            log.exception("Managing open trades failed")
+        finally:
+            self._journal_usage(now, None)
         self.score_calls(now)
         if not self._budget_ok(now):
             return
@@ -166,6 +177,15 @@ class Desk:
                 result.outcome = f"{result.outcome}; no order: hard limits rejected it: " + "; ".join(decision.reasons)
             elif execution.trade_id:
                 result.outcome = f"{result.outcome}; opened {decision.units} units, trade {execution.trade_id}"
+                p = result.proposal
+                self.alerts.send(
+                    f"opened:{execution.trade_id}",
+                    f"Opened {instrument} {'long' if decision.units > 0 else 'short'}, {abs(decision.units)} units at "
+                    f"{execution.fill_price}, stop {p.stop_loss}, target {p.take_profit or 'none'}, risking "
+                    f"{decision.risk_amount:.2f} {self.executor.budget_account().currency}. Exit plan: {p.exit_type}, "
+                    f"closed after {p.hold_hours}h at the latest. {p.exit_reason[:250]}",
+                    now,
+                )
             else:
                 result.outcome = f"{result.outcome}; dry run, would open {decision.units} units"
             result.transcript["execution"] = {

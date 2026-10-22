@@ -88,13 +88,23 @@ HEAD_SCHEMA = _obj(
     size={"type": "number", "description": "0.25 to 1: share of the risk manager's allowed size to use"},
     stop_loss={"type": "number"},
     take_profit=_NULLABLE_NUMBER,
-    hold_hours={"type": "integer"},
+    hold_hours={"type": "integer", "description": "Time limit: the trade is closed after this many hours"},
+    exit_plan=_obj(
+        type={"type": "string", "enum": ["target", "trailing_stop", "time_limit"]},
+        why_trade_exists={"type": "string", "description": "The reason for the trade, in one sentence"},
+        close_early_if={"type": "string", "description": "What news or price action would make you close it early"},
+    ),
     objection_answers={
         "type": "array",
         "items": _obj(objection_id={"type": "string"}, answer={"type": "string"}, resolved={"type": "boolean"}),
     },
     dissent={"type": "string", "description": "Which agents disagreed with your call, and why you overruled them"},
     reasoning={"type": "string"},
+)
+
+REVIEW_SCHEMA = _obj(
+    action={"type": "string", "enum": ["hold", "close"]},
+    reason={"type": "string"},
 )
 
 SCAN_SCHEMA = _obj(
@@ -178,6 +188,20 @@ strength of the arguments, not by counting votes. A well-supported minority view
 - Give a stop loss beyond the price where the thesis is wrong (the technical analyst's level is a
   starting point, not an order) and a target with at least 1.5 times the risk when possible.
 - Name who disagreed with your call and why you overruled them.
+- Write the exit plan now; nobody improvises it later. hold_hours is a hard time limit (code closes
+  the trade then). exit_plan.type: "target" to hold for the target, "trailing_stop" to let a trend run
+  with a stop that follows price 1R behind once it is 1R in profit, "time_limit" for a view that only
+  needs time. Say why the trade exists and what would make you close it early: if that happens, a
+  reviewer reads your words and decides whether to close.
 - Going against a significant quant seat signal halves the size (code enforces this); do it only when
   you can say why its statistics don't apply to this case.
 """ + QUANT_NOTE
+
+TRADE_REVIEW = DESK + """
+Your role: TRADE REVIEWER. A trade the desk opened earlier has hit a trigger (an event, a sharp move
+against it, or a big move in its favour). You get the head of desk's reasons for the trade, the exit
+plan written at entry, the trigger, and the market now. Decide: hold or close. Close only if the reason
+the trade exists no longer holds, or the "close early if" condition has happened. A trade that is merely
+losing is not a reason to close: its stop loss is already at OANDA. Don't re-argue the original call
+from scratch; judge whether what changed breaks it.
+"""

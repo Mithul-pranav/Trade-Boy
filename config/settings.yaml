@@ -13,7 +13,7 @@ pairs:
 # can be traded. If the budget is used up, the desk halts until Mithul approves more.
 # The amount is converted to the account currency (SGD) once, when the desk starts.
 capital:
-  starting_amount: 100
+  starting_amount: 1000          # Mithul raised it from 100 on 2026-10-22 for demo trading
   currency: USD
 
 scanner:

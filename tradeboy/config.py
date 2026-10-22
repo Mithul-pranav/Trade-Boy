@@ -45,7 +45,7 @@ class ClaudeSettings:
 class Settings:
     pairs: list[str]
     risk: RiskLimits
-    starting_capital: float = 100.0
+    starting_capital: float = 1000.0
     capital_currency: str = "USD"
     scan_interval_minutes: int = 15
     journal_path: Path = field(default=ROOT / "data" / "journal.sqlite3")
@@ -82,7 +82,7 @@ def load_settings(path: Path = DEFAULT_SETTINGS) -> Settings:
     return Settings(
         pairs=list(raw["pairs"]),
         risk=RiskLimits(**raw.get("risk", {})),
-        starting_capital=float(raw.get("capital", {}).get("starting_amount", 100)),
+        starting_capital=float(raw.get("capital", {}).get("starting_amount", 1000)),
         capital_currency=raw.get("capital", {}).get("currency", "USD"),
         scan_interval_minutes=raw.get("scanner", {}).get("interval_minutes", 15),
         journal_path=journal_path,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from tradeboy.llm import Usage
@@ -34,8 +35,9 @@ def risk(long=1.0, short=1.0):
     return {"long_size": long, "short_size": short, "concerns": [], "summary": "s"}
 
 
-def head(side="long", stop=1.0950, target=1.1100, answers=(), size=1.0):
+def head(side="long", stop=1.0950, target=1.1100, answers=(), size=1.0, exit_type="target"):
     return {"side": side, "size": size, "stop_loss": stop, "take_profit": target, "hold_hours": 24,
+            "exit_plan": {"type": exit_type, "why_trade_exists": "w", "close_early_if": "c"},
             "objection_answers": [{"objection_id": o, "answer": "a", "resolved": r} for o, r in answers],
             "dissent": "d", "reasoning": "because"}
 
@@ -89,6 +91,9 @@ class FakeBroker:
         self.orders = []
         self.later_price = later_price
         self.candle_calls = 0
+        self.closed = []
+        self.stops = []
+        self.realized = {}
 
     def account(self):
         return AccountState(self.nav, self.nav, "SGD", list(self.trades))
@@ -114,4 +119,19 @@ class FakeBroker:
         return {"orderFillTransaction": {"price": "1.1001", "tradeOpened": {"tradeID": "42"}}}
 
     def close_trade(self, trade_id):
+        self.closed.append(trade_id)
+        self.trades = [t for t in self.trades if t.trade_id != trade_id]
         return {}
+
+    def open_trades(self):
+        return list(self.trades)
+
+    def set_stop(self, trade_id, instrument, price):
+        self.stops.append((trade_id, price))
+        self.trades = [replace(t, stop_loss=price) if t.trade_id == trade_id else t for t in self.trades]
+        return {}
+
+    def trade_details(self, trade_id):
+        if any(t.trade_id == trade_id for t in self.trades):
+            return {"state": "OPEN", "realized_pl": 0.0, "close_price": None}
+        return {"state": "CLOSED", "realized_pl": self.realized.get(trade_id, 0.0), "close_price": None}

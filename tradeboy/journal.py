@@ -35,7 +35,12 @@ CREATE TABLE IF NOT EXISTS trades (
     risk_amount REAL NOT NULL,
     opened_at TEXT NOT NULL,
     closed_at TEXT,
-    realized_pl REAL
+    realized_pl REAL,
+    hold_until TEXT,
+    exit_type TEXT,
+    exit_reason TEXT,
+    reviewed TEXT NOT NULL DEFAULT '[]',
+    close_note TEXT
 );
 CREATE TABLE IF NOT EXISTS equity_marks (
     ts TEXT NOT NULL,
@@ -83,6 +88,11 @@ CREATE TABLE IF NOT EXISTS api_usage (
 );
 """
 
+EXIT_COLUMNS = {
+    "hold_until": "TEXT", "exit_type": "TEXT", "exit_reason": "TEXT", "reviewed": "TEXT NOT NULL DEFAULT '[]'",
+    "close_note": "TEXT",
+}
+
 
 def trading_day(ts: datetime) -> str:
     """Forex days roll over at 17:00 New York time."""
@@ -95,6 +105,12 @@ class Journal:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path))
         self.db.executescript(SCHEMA)
+        # Journals made before exit plans existed get the new trade columns.
+        have = {row[1] for row in self.db.execute("PRAGMA table_info(trades)")}
+        for column, kind in EXIT_COLUMNS.items():
+            if column not in have:
+                self.db.execute(f"ALTER TABLE trades ADD COLUMN {column} {kind}")
+        self.db.commit()
 
     def record_decision(
         self, ts: datetime, instrument: str, side: str, approved: bool, units: int,
@@ -112,14 +128,50 @@ class Journal:
     def record_trade(
         self, trade_id: str, decision_id: int, instrument: str, units: int, entry_price: float,
         stop_loss: float, take_profit: float | None, risk_amount: float, opened_at: datetime,
+        hold_hours: int = 24, exit_type: str = "time_limit", exit_reason: str = "",
     ) -> None:
         self.db.execute(
             "INSERT INTO trades (trade_id, decision_id, instrument, units, entry_price, stop_loss,"
-            " take_profit, risk_amount, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " take_profit, risk_amount, opened_at, hold_until, exit_type, exit_reason)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (trade_id, decision_id, instrument, units, entry_price, stop_loss, take_profit,
-             risk_amount, opened_at.isoformat()),
+             risk_amount, opened_at.isoformat(), (opened_at + timedelta(hours=hold_hours)).isoformat(),
+             exit_type, exit_reason),
         )
         self.db.commit()
+
+    def open_trades(self) -> list[dict]:
+        """Trades the desk opened that it hasn't seen close yet, with their exit plans."""
+        cur = self.db.execute(
+            "SELECT t.trade_id, t.instrument, t.units, t.entry_price, t.stop_loss, t.take_profit, t.opened_at,"
+            " t.hold_until, t.exit_type, t.exit_reason, t.reviewed, d.rationale"
+            " FROM trades t LEFT JOIN decisions d ON d.id = t.decision_id WHERE t.closed_at IS NULL"
+        )
+        names = [c[0] for c in cur.description]
+        rows = [dict(zip(names, row)) for row in cur.fetchall()]
+        for row in rows:
+            row["reviewed"] = json.loads(row["reviewed"] or "[]")
+        return rows
+
+    def mark_reviewed(self, trade_id: str, trigger: str) -> None:
+        reviewed = json.loads(
+            self.db.execute("SELECT reviewed FROM trades WHERE trade_id = ?", (trade_id,)).fetchone()[0] or "[]"
+        )
+        self.db.execute("UPDATE trades SET reviewed = ? WHERE trade_id = ?", (json.dumps(reviewed + [trigger]), trade_id))
+        self.db.commit()
+
+    def set_close_note(self, trade_id: str, note: str) -> None:
+        self.db.execute("UPDATE trades SET close_note = ? WHERE trade_id = ?", (note, trade_id))
+        self.db.commit()
+
+    def mark_closed(self, trade_id: str, ts: datetime, realized_pl: float | None) -> str | None:
+        """Records the close; returns the desk's own reason for it, if the desk closed it."""
+        self.db.execute(
+            "UPDATE trades SET closed_at = ?, realized_pl = ? WHERE trade_id = ?", (ts.isoformat(), realized_pl, trade_id)
+        )
+        self.db.commit()
+        row = self.db.execute("SELECT close_note FROM trades WHERE trade_id = ?", (trade_id,)).fetchone()
+        return row[0] if row else None
 
     def risk_for(self, trade_id: str) -> float | None:
         row = self.db.execute("SELECT risk_amount FROM trades WHERE trade_id = ?", (trade_id,)).fetchone()
