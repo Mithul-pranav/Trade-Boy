@@ -11,6 +11,10 @@
                       send a test message to Telegram (finds the chat ID on first use)
     tradeboy history  download years of OANDA candles (bid and ask) and interest rates for backtests
     tradeboy backtest test the code screen and the quant seat's signals on that history, write the report
+    tradeboy macro-history
+                      download daily and 4h candles since 2004, FRED rates and central bank decisions
+    tradeboy macro-backtest
+                      test the slow macro strategies and exit rules on that history, write the report
     tradeboy resume   clear the kill switch after Mithul has approved trading again
     tradeboy resume --new-budget
                       also start a fresh budget (capital.starting_amount) from the current account value
@@ -191,10 +195,30 @@ def backtest() -> None:
     print(f"Pass bar {'PASSED' if result['passed'] else 'NOT passed'}. Full report: {report}")
 
 
+def download_macro_history() -> None:
+    from . import macro_backtest as mb
+
+    mb.download(OandaClient(load_credentials()))
+    print(f"Saved to {mb.MACRO_DIR}")
+
+
+def macro_backtest() -> None:
+    from . import macro_backtest as mb
+    from . import macro_report
+
+    result = mb.run()
+    report = ROOT / "reports" / "macro_backtest.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(macro_report.render(result))
+    for check in result["pass_bar"]:
+        print(f"  {'pass' if check['passed'] else 'FAIL'}  {check['check']}: {check['got']} (needs {check['needs']})")
+    print(f"Pass bar {'PASSED' if result['passed'] else 'NOT passed'}. Full report: {report}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tradeboy")
     parser.add_argument("command", choices=["check", "run", "debate", "status", "test-alert", "resume", "history",
-                                            "backtest"])
+                                            "backtest", "macro-history", "macro-backtest"])
     parser.add_argument("instrument", nargs="?", help="with debate: the pair, e.g. EUR_USD")
     parser.add_argument("--paper", action="store_true", help="place trades on the OANDA practice account")
     parser.add_argument("--once", action="store_true", help="with run: one cycle, then exit")
@@ -215,6 +239,10 @@ def main() -> None:
         download_history(args.since)
     elif args.command == "backtest":
         backtest()
+    elif args.command == "macro-history":
+        download_macro_history()
+    elif args.command == "macro-backtest":
+        macro_backtest()
     elif args.command == "status":
         status()
     else:

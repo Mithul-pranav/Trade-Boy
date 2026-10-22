@@ -120,6 +120,19 @@ trade after costs, a t-stat of 2 or more, profit factor 1.1+, 60% of windows pos
 showed an edge after costs; the code screen loses about 0.15R per trade in either direction, which is the
 cost of trading itself. The quant seat therefore tells every debate it has no tested edge.
 
+### Slow macro strategies (weekly)
+
+`tradeboy macro-history` then `tradeboy macro-backtest` (needs `pip install -e ".[research]"`) test slower,
+interest-rate driven ideas on weekly positions since 2004: carry, carry with a trend filter, short-rate and
+10-year yield spread momentum, central bank rate moves, 5-year value, a carry/trend/value mix and a ridge
+regression. It also compares seven exit rules on the same entries (signal flip, protective stop, central bank
+move, fixed stop and target, trailing stop, 4 and 13 week time exits), with random entries as a control.
+
+**Latest result: not passed.** See [reports/macro_backtest.md](reports/macro_backtest.md). No rule and no exit
+showed an edge after costs out of sample, exits on random entries lose about the cost of trading, and even a
+real modest edge would not pay for weekly debates on a 100 USD budget. The report ends with how the desk
+enters and exits today and a proposal for managing open trades.
+
 ## Settings
 
 All tunable numbers live in [`config/settings.yaml`](config/settings.yaml): the pairs traded and the risk limits.
@@ -155,6 +168,8 @@ python -m tradeboy run --paper        # place winning trades on the OANDA practi
 python -m tradeboy status             # budget, spend, agreement rate, track records
 python -m tradeboy history            # download years of candles and interest rates (once, then to top up)
 python -m tradeboy backtest           # test the rules, check the pass bar, write reports/backtest.md
+python -m tradeboy macro-history      # daily/4h candles since 2004, FRED rates, central bank decisions
+python -m tradeboy macro-backtest     # weekly macro strategies and exit rules, write reports/macro_backtest.md
 ```
 
 `--paper` refuses to run against a live OANDA account. Credentials come only from environment variables.
