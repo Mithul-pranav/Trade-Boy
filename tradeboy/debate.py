@@ -17,7 +17,7 @@ from . import agents
 from .config import Settings
 from .llm import LLM
 from .market import recent_bars, summarize
-from .models import AccountState, Quote, Side, TradeProposal, currencies
+from .models import AccountState, Quote, Side, TradeProposal, currencies, pip_size
 
 ANALYSTS = {
     "technical": (agents.TECHNICAL, agents.TECHNICAL_SCHEMA, 0),
@@ -25,6 +25,8 @@ ANALYSTS = {
     "positioning": (agents.POSITIONING, agents.VIEW_SCHEMA, 1),
 }
 TIMEFRAMES = {"M15": 200, "H1": 200, "H4": 200, "D": 100}
+MIN_SIZE = 0.25  # smallest share of the normal risk the risk manager or head of desk can choose
+MIN_TRADE_SIZE = 0.1  # floor after unanswered objections have halved the size
 
 
 @dataclass
@@ -36,6 +38,10 @@ class Evidence:
     charts: dict[str, dict] = field(default_factory=dict)
     position_book: dict | None = None
     calendar: list[dict] = field(default_factory=list)
+    news: list[dict] = field(default_factory=list)
+    macro: list[dict] = field(default_factory=list)
+    # Inputs that should have been there but weren't, so agents treat silence as missing data, not calm.
+    data_gaps: list[str] = field(default_factory=list)
     scanner_reason: str = ""
 
 
@@ -44,14 +50,23 @@ class DebateResult:
     debate_id: str
     instrument: str
     proposal: TradeProposal | None
-    outcome: str  # "trade" or why there's no trade
+    outcome: str  # "trade: ..." with how the rules shaped it, or later why the hard limits stopped it
     transcript: dict
     initial_stances: dict[str, str]
     final_stances: dict[str, str]
     stance_changes: int
 
 
-def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "") -> Evidence:
+def _headline(h) -> dict:
+    row = {"time": h.time.isoformat(timespec="minutes"), "source": h.source + (f" / {h.publisher}" if h.publisher else ""),
+           "headline": h.title, "currencies": list(h.currencies)}
+    if h.sentiment:
+        row["finbert_tone"] = f"{h.sentiment['label']} {h.sentiment['confidence']:.2f}"
+    return row
+
+
+def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "", news=None,
+                    macro=None) -> Evidence:
     quote = broker.quotes([instrument])[instrument]
     evidence = Evidence(instrument, quote, scanner_reason=scanner_reason)
     for granularity, count in TIMEFRAMES.items():
@@ -66,6 +81,17 @@ def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_re
             {"time": e.time.isoformat(), "currency": e.currency, "event": e.title, "impact": e.impact}
             for e in calendar.upcoming(set(currencies(instrument)), now)
         ]
+        if getattr(calendar, "last_error", None):
+            evidence.data_gaps.append(calendar.last_error)
+    else:
+        evidence.data_gaps.append("No economic calendar is configured, so scheduled events are unknown.")
+    if news is not None:
+        evidence.news = [_headline(h) for h in news.headlines(set(currencies(instrument)), now)]
+        evidence.data_gaps.extend(news.gaps(set(currencies(instrument))))
+    if macro is not None:
+        pair = set(currencies(instrument))
+        evidence.macro = macro.snapshot(pair, now)
+        evidence.data_gaps.extend(macro.gaps(pair))
     return evidence
 
 
@@ -98,9 +124,14 @@ class Debate:
             head += f"Why the scanner flagged it: {ev.scanner_reason}\n"
         if name == "technical":
             return head + f"\nCharts by timeframe (summary plus the last 12 bars, mid prices):\n{_dump(ev.charts)}"
+        gaps = f"\nMissing data (treat as unknown, not as calm):\n{_dump(ev.data_gaps)}\n" if ev.data_gaps else ""
         if name == "macro":
-            cal = _dump(ev.calendar) if ev.calendar else "No calendar feed available; search for upcoming events."
-            return head + f"\nScheduled events for these currencies (next 48 hours):\n{cal}"
+            cal = _dump(ev.calendar) if ev.calendar else "None listed."
+            news = _dump(ev.news) if ev.news else "None found."
+            macro = (f"\nLatest macro data from FRED (value, date of the reading, change over about a month):\n"
+                     f"{_dump(ev.macro)}\n") if ev.macro else ""
+            return (head + f"\nScheduled events for these currencies (next 48 hours):\n{cal}\n"
+                    f"\nRecent headlines from news feeds (last 48 hours, newest first):\n{news}\n" + macro + gaps)
         return head + f"\nOANDA retail position book:\n{_dump(ev.position_book)}"
 
     def run(self, ev: Evidence, account: AccountState, now: datetime) -> DebateResult:
@@ -113,6 +144,9 @@ class Debate:
                 "charts": {tf: c["summary"] for tf, c in ev.charts.items()},
                 "position_book": ev.position_book,
                 "calendar": ev.calendar,
+                "news": ev.news,
+                "macro": ev.macro,
+                "data_gaps": ev.data_gaps,
                 "scanner_reason": ev.scanner_reason,
             },
         }
@@ -175,6 +209,7 @@ class Debate:
             "quote": {"bid": ev.quote.bid, "ask": ev.quote.ask},
             "volatility_atr14_pips": {tf: c["summary"]["atr14_pips"] for tf, c in ev.charts.items()},
             "scheduled_events": ev.calendar,
+            "data_gaps": ev.data_gaps,
         }
         skeptic = self._ask("skeptic", agents.SKEPTIC, f"Pair: {ev.instrument}\nThe case so far:\n{_dump(case)}",
                             agents.SKEPTIC_SCHEMA)
@@ -182,8 +217,8 @@ class Debate:
 
         # 4. The risk manager sizes each direction against what's already open.
         risk = self._ask("risk_manager", agents.RISK, self._risk_prompt(ev, account), agents.RISK_SCHEMA)
-        risk["long_size"] = _clamp(risk["long_size"], 0.0, 1.0)
-        risk["short_size"] = _clamp(risk["short_size"], 0.0, 1.0)
+        risk["long_size"] = _clamp(risk["long_size"], MIN_SIZE, 1.0)
+        risk["short_size"] = _clamp(risk["short_size"], MIN_SIZE, 1.0)
         transcript["risk_manager"] = risk
 
         # 5. The head of desk decides on the arguments and must answer every serious objection.
@@ -229,27 +264,52 @@ class Debate:
         )
 
     def _enforce(self, ev: Evidence, debate_id: str, skeptic: dict, risk: dict, head: dict):
-        """The checkable rules. Returns (outcome, proposal or None)."""
-        if head["decision"] != "trade" or head["side"] == "none":
-            return "no_trade: head of desk passed", None
+        """The checkable rules. Every debate ends in a trade; the rules shape its size and stop.
+
+        Returns (outcome, proposal).
+        """
+        side = Side.BUY if head["side"] == "long" else Side.SELL
         answered = {a["objection_id"] for a in head["objection_answers"] if a["resolved"]}
         open_objections = [
             o["id"] for o in skeptic["objections"] if o["severity"] in ("fatal", "serious") and o["id"] not in answered
         ]
-        if open_objections:
-            return f"no_trade: unanswered objections {', '.join(open_objections)}", None
-        size = risk["long_size"] if head["side"] == "long" else risk["short_size"]
-        if size <= 0:
-            return f"no_trade: risk manager blocked the {head['side']} side", None
-        if head["stop_loss"] is None:
-            return "no_trade: no stop loss given", None
+        allowed = risk["long_size"] if side is Side.BUY else risk["short_size"]
+        # Each unanswered fatal or serious objection halves the size.
+        size = max(allowed * _clamp(head["size"], MIN_SIZE, 1.0) * 0.5 ** len(open_objections), MIN_TRADE_SIZE)
+        stop, stop_note = self._stop(ev, side, head["stop_loss"])
+        entry = ev.quote.ask if side is Side.BUY else ev.quote.bid
+        target = head["take_profit"]
+        if target is not None and (target - entry) * (1 if side is Side.BUY else -1) <= 0:
+            target = None
         proposal = TradeProposal(
             instrument=ev.instrument,
-            side=Side.BUY if head["side"] == "long" else Side.SELL,
-            stop_loss=float(head["stop_loss"]),
-            take_profit=float(head["take_profit"]) if head["take_profit"] is not None else None,
+            side=side,
+            stop_loss=stop,
+            take_profit=float(target) if target is not None else None,
             rationale=head["reasoning"],
             debate_id=debate_id,
-            risk_fraction=size,
+            risk_fraction=round(size, 3),
         )
-        return "trade", proposal
+        notes = [f"{head['side']} at {size:.0%} size"]
+        if open_objections:
+            notes.append(f"halved for unanswered objections {', '.join(open_objections)}")
+        if stop_note:
+            notes.append(stop_note)
+        return "trade: " + "; ".join(notes), proposal
+
+    def _stop(self, ev: Evidence, side: Side, stop: float | None) -> tuple[float, str]:
+        """The head's stop if it's usable; otherwise one set from volatility. Every order has a stop."""
+        entry = ev.quote.ask if side is Side.BUY else ev.quote.bid
+        pip = pip_size(ev.instrument)
+        sign = -1 if side is Side.BUY else 1
+        minimum = (self.settings.risk.min_stop_pips + 1) * pip
+        if stop is not None and (stop - entry) * sign >= minimum:
+            return float(stop), ""
+        atr = ev.charts.get("H1", {}).get("summary", {}).get("atr14_pips")
+        distance = max(1.5 * atr * pip if atr else 0.0, minimum)
+        if stop is not None and (stop - entry) * sign > 0:
+            note = f"stop widened to the {self.settings.risk.min_stop_pips:g}-pip minimum"
+            distance = minimum
+        else:
+            note = "stop set from volatility (1.5x H1 ATR) because the head's stop was unusable"
+        return round(entry + sign * distance, 5 if pip < 0.01 else 3), note

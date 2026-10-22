@@ -235,6 +235,10 @@ class Journal:
         row = self.db.execute("SELECT SUM(cost_usd) FROM api_usage WHERE month = ?", (ts.strftime("%Y-%m"),))
         return row.fetchone()[0] or 0.0
 
+    def total_spend(self) -> float:
+        """Everything ever spent on Claude, in USD."""
+        return self.db.execute("SELECT SUM(cost_usd) FROM api_usage").fetchone()[0] or 0.0
+
     def day_spend(self, ts: datetime) -> float:
         start = (ts - timedelta(hours=24)).isoformat()
         row = self.db.execute("SELECT SUM(cost_usd) FROM api_usage WHERE ts > ?", (start,))

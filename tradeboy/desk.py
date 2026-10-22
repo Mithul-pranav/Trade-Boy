@@ -28,7 +28,7 @@ CREDITS_RETRY = timedelta(hours=6)
 class Desk:
     def __init__(
         self, settings: Settings, broker, journal: Journal, llm, calendar=None, dry_run: bool = True,
-        alerts: Alerts | None = None,
+        alerts: Alerts | None = None, news=None, macro=None,
     ):
         self.settings = settings
         self.alerts = alerts or Alerts(journal)
@@ -36,6 +36,8 @@ class Desk:
         self.journal = journal
         self.llm = llm
         self.calendar = calendar
+        self.news = news
+        self.macro = macro
         self.dry_run = dry_run
         self.executor = Executor(settings, broker, journal, calendar, dry_run=dry_run)
 
@@ -141,7 +143,8 @@ class Desk:
             return None
         log.info("Debate on %s starting.", instrument)
         try:
-            evidence = gather_evidence(self.broker, self.calendar, instrument, now, reason)
+            evidence = gather_evidence(self.broker, self.calendar, instrument, now, reason, news=self.news,
+                                       macro=self.macro)
             result = Debate(self.settings, self.llm, self.journal.track_records()).run(
                 evidence, self.executor.budget_account(), now
             )
@@ -158,11 +161,11 @@ class Desk:
             execution = self.executor.execute(result.proposal, now)
             decision = execution.decision
             if not decision.approved:
-                result.outcome = "no_trade: hard limits rejected it: " + "; ".join(decision.reasons)
+                result.outcome = f"{result.outcome}; no order: hard limits rejected it: " + "; ".join(decision.reasons)
             elif execution.trade_id:
-                result.outcome = f"trade: opened {decision.units} units, trade {execution.trade_id}"
+                result.outcome = f"{result.outcome}; opened {decision.units} units, trade {execution.trade_id}"
             else:
-                result.outcome = f"trade (dry run): would open {decision.units} units"
+                result.outcome = f"{result.outcome}; dry run, would open {decision.units} units"
             result.transcript["execution"] = {
                 "approved": decision.approved, "units": decision.units, "risk_amount": decision.risk_amount,
                 "reasons": decision.reasons, "trade_id": execution.trade_id, "dry_run": self.dry_run,
@@ -191,7 +194,7 @@ class Desk:
                 result.debate_id, agent, result.instrument, stance, confidence, mid, now, now + timedelta(hours=hours)
             )
         head = result.transcript["head_of_desk"]
-        if head["decision"] == "trade" and head["side"] in ("long", "short"):
+        if head["side"] in ("long", "short"):
             hours = min(max(int(head["hold_hours"]), 1), 168)
             self.journal.record_call(
                 result.debate_id, "head_of_desk", result.instrument, head["side"], 100, mid, now,

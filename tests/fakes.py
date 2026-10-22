@@ -34,8 +34,8 @@ def risk(long=1.0, short=1.0):
     return {"long_size": long, "short_size": short, "concerns": [], "summary": "s"}
 
 
-def head(decision="trade", side="long", stop=1.0950, target=1.1100, answers=()):
-    return {"decision": decision, "side": side, "stop_loss": stop, "take_profit": target, "hold_hours": 24,
+def head(side="long", stop=1.0950, target=1.1100, answers=(), size=1.0):
+    return {"side": side, "size": size, "stop_loss": stop, "take_profit": target, "hold_hours": 24,
             "objection_answers": [{"objection_id": o, "answer": "a", "resolved": r} for o, r in answers],
             "dissent": "d", "reasoning": "because"}
 

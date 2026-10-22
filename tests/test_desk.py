@@ -21,7 +21,7 @@ def make(script=None, dry_run=True, settings=SETTINGS, broker=None, cost=0.01):
 def test_dry_run_debate_is_journaled_but_places_no_order():
     desk, broker, _ = make()
     result = desk.debate("EUR_USD", NOW)
-    assert result.outcome.startswith("trade (dry run)")
+    assert result.outcome.startswith("trade: long") and "dry run, would open" in result.outcome
     assert broker.orders == []
     row = desk.journal.db.execute("SELECT instrument, analysts_agreed_first FROM debates").fetchone()
     assert row == ("EUR_USD", 1)
@@ -35,13 +35,22 @@ def test_paper_debate_places_order_sized_by_risk_manager():
     assert broker.orders[0][1] == 47
 
 
-def test_hard_limits_still_apply_after_the_debate():
+def test_too_tight_stop_is_widened_so_the_order_still_goes_in():
     script = agreeing_script()
     script["head_of_desk"] = head(stop=1.0999, answers=[("O1", True)])  # a 2-pip stop
     desk, broker, _ = make(script, dry_run=False)
     result = desk.debate("EUR_USD", NOW)
+    assert "stop widened" in result.outcome
+    entry = broker.quotes(["EUR_USD"])["EUR_USD"].ask
+    assert round((entry - broker.orders[0][2]) / 0.0001, 1) == SETTINGS.risk.min_stop_pips + 1
+
+
+def test_hard_limits_still_apply_after_the_debate():
+    settings = replace(SETTINGS, risk=replace(SETTINGS.risk, max_open_trades=0))
+    desk, broker, _ = make(settings=settings, dry_run=False)
+    result = desk.debate("EUR_USD", NOW)
     assert broker.orders == []
-    assert "hard limits rejected" in result.outcome and "minimum" in result.outcome
+    assert "hard limits rejected" in result.outcome
 
 
 def test_api_usage_is_recorded_and_the_spend_cap_stops_debates():

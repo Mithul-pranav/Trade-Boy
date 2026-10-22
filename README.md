@@ -23,18 +23,25 @@ whether the agents really argue before any paper trading starts.
 
 ### How agreement has to be earned
 
-The prompts tell every agent to reason rather than agree. The code enforces what can be checked:
+Every debate ends in a trade, long or short: the argument is about which side, how big and where the
+stop goes, never whether to trade. The prompts tell every agent to reason rather than agree. The code
+enforces what can be checked:
 
 1. **Independent first views.** The three analysts run at the same time and none sees another's view.
 2. **Rebuttals.** When they disagree, each must answer the strongest argument against it. A stance change
    that doesn't name the argument behind it is thrown out (being outnumbered isn't an argument).
-3. **The skeptic always objects**, rating each objection fatal, serious or minor.
-4. **No unanswered objections.** If any fatal or serious objection isn't marked resolved by the head of desk,
-   the outcome is no trade, whatever the head of desk decided.
-5. **Risk manager can block a side** or shrink size, never grow it. Then the hard limits from phase 1 apply.
-6. **Track records.** Every analyst's call is scored in pips once its own time horizon passes, and the head
+3. **The skeptic always objects** to the side the analysts lean to, rating each objection fatal, serious or minor.
+4. **Unanswered objections cost size.** Each fatal or serious objection the head of desk doesn't resolve halves
+   the trade (down to a floor of 10% of normal risk).
+5. **Size.** The risk manager sets the most each side may use (25% to 100% of normal risk), and the head of desk
+   picks a share of that. Nobody can grow a trade past the normal per-trade risk.
+6. **Every order has a stop.** If the head of desk's stop is on the wrong side or missing, code sets one at 1.5x
+   the hourly ATR; a stop inside the 5-pip minimum is widened to it. Then the hard limits from phase 1 apply
+   (per-trade risk, daily loss cap, spread, news blackout, max open trades, the 100 USD kill switch), and these
+   can still stop an order.
+7. **Track records.** Every analyst's call is scored in pips once its own time horizon passes, and the head
    of desk sees who has actually been right.
-7. **Agreement alarm.** If the analysts start on the same side in 85% or more of the last 20 debates, the
+8. **Agreement alarm.** If the analysts start on the same side in 85% or more of the last 20 debates, the
    desk raises an alert: they may be echoing each other.
 
 ### Keeping the Claude bill small
@@ -45,7 +52,9 @@ The prompts tell every agent to reason rather than agree. The code enforces what
   debates; open trades keep their stop losses at OANDA.
 - If the API reports the credits are gone, the agents pause, an alert goes out, and the desk retries every
   6 hours, so topping up the credits is all it takes.
-- Every call's tokens and cost are journaled; `tradeboy status` shows the month so far.
+- Every call's tokens and cost are journaled; `tradeboy status` shows the month so far and the
+  **net result after API costs** (trading profit or loss minus everything spent on Claude, in the
+  account currency).
 
 ### Alerts
 
@@ -63,6 +72,17 @@ sent at most once a day: budget gone (desk halted), Claude credits out, spend ca
 - `tradeboy/desk.py`: the 15-minute loop, the code screen, spend caps, scoring and alarms.
 - `tradeboy/llm.py`: Claude calls with structured JSON answers and cost tracking.
 - `tradeboy/calendar.py`, `tradeboy/alerts.py`: economic calendar feed and alerts.
+- `tradeboy/news.py`: free central bank, FX and Google News search headlines (RSS/Atom, no keys) for the
+  macro analyst, so it has dated news without web search. Up to 10 per feed, each with its publisher.
+  Unreachable feeds are shown to the agents as missing data.
+- `tradeboy/macro.py`: rates, Treasury yields, CPI (year on year), unemployment and foreign 10-year yields
+  from FRED's public CSV downloads (no key), refreshed once a day, each with the date of its reading.
+- `tradeboy/sentiment.py`: optional FinBERT headline tone, run locally (`pip install -e '.[sentiment]'`,
+  then `news.sentiment: true`). Off by default: torch needs about 1 GB of RAM.
+
+The news and macro feeds need these hosts reachable from the server: news.google.com,
+fred.stlouisfed.org, the central bank sites in `config/settings.yaml`, www.fxstreet.com,
+nfs.faireconomy.media (calendar), and huggingface.co if FinBERT is on (one model download).
 
 ## Settings
 
@@ -91,7 +111,7 @@ more (`tradeboy resume --new-budget`). Percentages below are of the budget's cur
 pip install -e ".[dev]"
 pytest
 
-# needs OANDA_API_TOKEN (and optionally OANDA_ACCOUNT_ID) and ANTHROPIC_API_KEY; see .env.example
+# needs OANDA_API_TOKEN (and optionally OANDA_ACCOUNT_ID) and TRADEBOY_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY); see .env.example
 python -m tradeboy check              # OANDA connection and prices
 python -m tradeboy debate EUR_USD     # one debate now, printed in full (dry run)
 python -m tradeboy run                # the desk, every 15 minutes, dry run

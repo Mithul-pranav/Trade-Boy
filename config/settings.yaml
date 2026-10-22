@@ -53,5 +53,52 @@ claude:
 calendar:
   url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
+# Free news headlines for the macro analyst, read in code so it has news even without web search.
+# Central bank feeds tag every item with their currency; general feeds are matched by keyword.
+# google_news entries are Google News RSS searches (no key), limited to the last 2 days.
+# Each feed contributes at most max_items (default 10) of its newest matching headlines.
+# A feed that can't be read is shown to the agents as a data gap.
+news:
+  # FinBERT headline tone. Off by default: it needs torch (~2 GB disk, ~1 GB RAM) and only scores
+  # tone, not direction for a pair. Install with: pip install -e '.[sentiment]'
+  sentiment: false
+  feeds:
+    - {name: Federal Reserve, url: "https://www.federalreserve.gov/feeds/press_all.xml", currencies: [USD]}
+    - {name: ECB, url: "https://www.ecb.europa.eu/rss/press.html", currencies: [EUR]}
+    - {name: Bank of England, url: "https://www.bankofengland.co.uk/rss/news", currencies: [GBP]}
+    - {name: Bank of Japan, url: "https://www.boj.or.jp/en/rss/whatsnew.xml", currencies: [JPY]}
+    - {name: RBA, url: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml", currencies: [AUD]}
+    - {name: Bank of Canada, url: "https://www.bankofcanada.ca/content_type/press-releases/feed/", currencies: [CAD]}
+    - {name: FXStreet, url: "https://www.fxstreet.com/rss/news"}
+    - {name: Google News USD, google_news: '"Federal Reserve" OR FOMC OR "US dollar"', currencies: [USD]}
+    - {name: Google News EUR, google_news: 'ECB OR "euro zone" OR "EUR/USD"', currencies: [EUR]}
+    - {name: Google News GBP, google_news: '"Bank of England" OR sterling OR "GBP/USD"', currencies: [GBP]}
+    - {name: Google News JPY, google_news: '"Bank of Japan" OR yen OR "USD/JPY"', currencies: [JPY]}
+    - {name: Google News AUD, google_news: 'RBA OR "Australian dollar"', currencies: [AUD]}
+    - {name: Google News CAD, google_news: '"Bank of Canada" OR "Canadian dollar"', currencies: [CAD]}
+    - {name: Google News CHF, google_news: 'SNB OR "Swiss National Bank" OR "Swiss franc"', currencies: [CHF]}
+    - {name: Google News NZD, google_news: 'RBNZ OR "New Zealand dollar"', currencies: [NZD]}
+
+# Macro data from FRED's public CSV downloads (no key), refreshed once a day. The macro analyst sees
+# the series for the pair's two currencies. kind: yoy turns an index (CPI) into a year-on-year change.
+# Outside the US, FRED has few daily series, so most are the OECD's monthly 10-year yields.
+macro:
+  fred_series:
+    - {id: DFF, name: Fed funds rate, currency: USD}
+    - {id: DGS3MO, name: US 3-month Treasury yield, currency: USD}
+    - {id: DGS2, name: US 2-year Treasury yield, currency: USD}
+    - {id: DGS10, name: US 10-year Treasury yield, currency: USD}
+    - {id: CPIAUCSL, name: US CPI, currency: USD, kind: yoy}
+    - {id: UNRATE, name: US unemployment rate, currency: USD}
+    - {id: DTWEXBGS, name: Broad US dollar index, currency: USD}
+    - {id: ECBDFR, name: ECB deposit facility rate, currency: EUR}
+    - {id: IRLTLT01DEM156N, name: Germany 10-year yield (monthly), currency: EUR}
+    - {id: IRLTLT01GBM156N, name: UK 10-year yield (monthly), currency: GBP}
+    - {id: IRLTLT01JPM156N, name: Japan 10-year yield (monthly), currency: JPY}
+    - {id: IRLTLT01AUM156N, name: Australia 10-year yield (monthly), currency: AUD}
+    - {id: IRLTLT01CAM156N, name: Canada 10-year yield (monthly), currency: CAD}
+    - {id: IRLTLT01CHM156N, name: Switzerland 10-year yield (monthly), currency: CHF}
+    - {id: IRLTLT01NZM156N, name: New Zealand 10-year yield (monthly), currency: NZD}
+
 journal:
   path: data/journal.sqlite3

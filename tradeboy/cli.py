@@ -23,6 +23,8 @@ import time
 from datetime import datetime, timezone
 
 from .calendar import FeedCalendar
+from .macro import FredData, Series
+from .news import Feed, NewsFeeds
 from .config import ROOT, load_credentials, load_settings
 from .journal import Journal
 from .oanda import OandaClient
@@ -42,17 +44,25 @@ def check() -> None:
 
 def _desk(paper: bool):
     from .desk import Desk
-    from .llm import ClaudeLLM
+    from .llm import ClaudeLLM, api_key
 
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-        sys.exit("Set ANTHROPIC_API_KEY in the environment so the agents can reach Claude.")
+    if not (api_key() or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        sys.exit("Set TRADEBOY_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY) in the environment so the agents can reach Claude.")
     settings = load_settings()
     creds = load_credentials()
     if paper and creds.env != "practice":
         sys.exit("--paper only places orders on the OANDA practice account. Real money is a later, separate decision.")
     calendar = FeedCalendar(settings.calendar_url, fail_closed=paper) if settings.calendar_url else None
+    sentiment = None
+    if settings.news_sentiment:
+        from .sentiment import FinBert
+
+        sentiment = FinBert()
+    news = NewsFeeds([Feed.from_config(f) for f in settings.news_feeds], sentiment=sentiment)
+    macro = FredData([Series.from_config(s) for s in settings.fred_series])
     broker = OandaClient(creds)
-    return Desk(settings, broker, Journal(settings.journal_path), ClaudeLLM(), calendar, dry_run=not paper)
+    return Desk(settings, broker, Journal(settings.journal_path), ClaudeLLM(), calendar, dry_run=not paper,
+                news=news if settings.news_feeds else None, macro=macro if settings.fred_series else None)
 
 
 def _setup_logging() -> None:
@@ -90,6 +100,12 @@ def debate(instrument: str, paper: bool) -> None:
         print(json.dumps(result.transcript, indent=2, default=str))
 
 
+def net_result(trading: float, api_usd: float, usd_rate: float) -> dict:
+    """Trading profit or loss minus everything spent on Claude, both in the account currency."""
+    api = api_usd * usd_rate
+    return {"trading": round(trading, 2), "api_costs": round(api, 2), "net": round(trading - api, 2)}
+
+
 def status() -> None:
     from .executor import Executor
 
@@ -102,6 +118,9 @@ def status() -> None:
         broker = OandaClient(load_credentials())
         account = Executor(settings, broker, journal).budget_account()
         print(f"Budget equity: {account.nav:,.2f} {account.currency} (started at {budget[1]:,.2f})")
+        net = net_result(account.nav - budget[1], journal.total_spend(), Executor(settings, broker, journal).usd_rate(account.currency))
+        print(f"Trading result {net['trading']:+,.2f}, Claude API costs -{net['api_costs']:,.2f}, "
+              f"net result after API costs {net['net']:+,.2f} {account.currency}")
     print(f"Claude API spend: {journal.month_spend(now):.2f} USD this month, "
           f"{journal.day_spend(now):.2f} USD in the last 24 hours "
           f"(caps {settings.claude.monthly_budget_usd} / {settings.claude.daily_budget_usd})")
