@@ -39,6 +39,7 @@ class Evidence:
     position_book: dict | None = None
     calendar: list[dict] = field(default_factory=list)
     news: list[dict] = field(default_factory=list)
+    macro: list[dict] = field(default_factory=list)
     # Inputs that should have been there but weren't, so agents treat silence as missing data, not calm.
     data_gaps: list[str] = field(default_factory=list)
     scanner_reason: str = ""
@@ -56,7 +57,16 @@ class DebateResult:
     stance_changes: int
 
 
-def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "", news=None) -> Evidence:
+def _headline(h) -> dict:
+    row = {"time": h.time.isoformat(timespec="minutes"), "source": h.source + (f" / {h.publisher}" if h.publisher else ""),
+           "headline": h.title, "currencies": list(h.currencies)}
+    if h.sentiment:
+        row["finbert_tone"] = f"{h.sentiment['label']} {h.sentiment['confidence']:.2f}"
+    return row
+
+
+def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_reason: str = "", news=None,
+                    macro=None) -> Evidence:
     quote = broker.quotes([instrument])[instrument]
     evidence = Evidence(instrument, quote, scanner_reason=scanner_reason)
     for granularity, count in TIMEFRAMES.items():
@@ -76,12 +86,12 @@ def gather_evidence(broker, calendar, instrument: str, now: datetime, scanner_re
     else:
         evidence.data_gaps.append("No economic calendar is configured, so scheduled events are unknown.")
     if news is not None:
-        evidence.news = [
-            {"time": h.time.isoformat(timespec="minutes"), "source": h.source, "headline": h.title,
-             "currencies": list(h.currencies)}
-            for h in news.headlines(set(currencies(instrument)), now)
-        ]
-        evidence.data_gaps.extend(news.gaps())
+        evidence.news = [_headline(h) for h in news.headlines(set(currencies(instrument)), now)]
+        evidence.data_gaps.extend(news.gaps(set(currencies(instrument))))
+    if macro is not None:
+        pair = set(currencies(instrument))
+        evidence.macro = macro.snapshot(pair, now)
+        evidence.data_gaps.extend(macro.gaps(pair))
     return evidence
 
 
@@ -118,8 +128,10 @@ class Debate:
         if name == "macro":
             cal = _dump(ev.calendar) if ev.calendar else "None listed."
             news = _dump(ev.news) if ev.news else "None found."
+            macro = (f"\nLatest macro data from FRED (value, date of the reading, change over about a month):\n"
+                     f"{_dump(ev.macro)}\n") if ev.macro else ""
             return (head + f"\nScheduled events for these currencies (next 48 hours):\n{cal}\n"
-                    f"\nRecent headlines from news feeds (last 48 hours, newest first):\n{news}\n" + gaps)
+                    f"\nRecent headlines from news feeds (last 48 hours, newest first):\n{news}\n" + macro + gaps)
         return head + f"\nOANDA retail position book:\n{_dump(ev.position_book)}"
 
     def run(self, ev: Evidence, account: AccountState, now: datetime) -> DebateResult:
@@ -133,6 +145,7 @@ class Debate:
                 "position_book": ev.position_book,
                 "calendar": ev.calendar,
                 "news": ev.news,
+                "macro": ev.macro,
                 "data_gaps": ev.data_gaps,
                 "scanner_reason": ev.scanner_reason,
             },

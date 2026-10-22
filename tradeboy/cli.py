@@ -23,6 +23,7 @@ import time
 from datetime import datetime, timezone
 
 from .calendar import FeedCalendar
+from .macro import FredData, Series
 from .news import Feed, NewsFeeds
 from .config import ROOT, load_credentials, load_settings
 from .journal import Journal
@@ -52,10 +53,16 @@ def _desk(paper: bool):
     if paper and creds.env != "practice":
         sys.exit("--paper only places orders on the OANDA practice account. Real money is a later, separate decision.")
     calendar = FeedCalendar(settings.calendar_url, fail_closed=paper) if settings.calendar_url else None
-    news = NewsFeeds([Feed(f["url"], f.get("name", f["url"]), tuple(f.get("currencies", ()))) for f in settings.news_feeds])
+    sentiment = None
+    if settings.news_sentiment:
+        from .sentiment import FinBert
+
+        sentiment = FinBert()
+    news = NewsFeeds([Feed.from_config(f) for f in settings.news_feeds], sentiment=sentiment)
+    macro = FredData([Series.from_config(s) for s in settings.fred_series])
     broker = OandaClient(creds)
     return Desk(settings, broker, Journal(settings.journal_path), ClaudeLLM(), calendar, dry_run=not paper,
-                news=news if settings.news_feeds else None)
+                news=news if settings.news_feeds else None, macro=macro if settings.fred_series else None)
 
 
 def _setup_logging() -> None:

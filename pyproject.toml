@@ -7,6 +7,9 @@ dependencies = ["anthropic>=2.1", "httpx>=0.27", "pyyaml>=6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Local FinBERT headline tone (news.sentiment in settings). CPU-only torch keeps the download smaller:
+# pip install torch --index-url https://download.pytorch.org/whl/cpu first.
+sentiment = ["transformers>=4.40", "torch>=2.2"]
 
 [project.scripts]
 tradeboy = "tradeboy.cli:main"

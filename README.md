@@ -72,8 +72,17 @@ sent at most once a day: budget gone (desk halted), Claude credits out, spend ca
 - `tradeboy/desk.py`: the 15-minute loop, the code screen, spend caps, scoring and alarms.
 - `tradeboy/llm.py`: Claude calls with structured JSON answers and cost tracking.
 - `tradeboy/calendar.py`, `tradeboy/alerts.py`: economic calendar feed and alerts.
-- `tradeboy/news.py`: free central bank and FX news headlines (RSS/Atom) for the macro analyst, so it
-  has dated news without web search. Unreachable feeds are shown to the agents as missing data.
+- `tradeboy/news.py`: free central bank, FX and Google News search headlines (RSS/Atom, no keys) for the
+  macro analyst, so it has dated news without web search. Up to 10 per feed, each with its publisher.
+  Unreachable feeds are shown to the agents as missing data.
+- `tradeboy/macro.py`: rates, Treasury yields, CPI (year on year), unemployment and foreign 10-year yields
+  from FRED's public CSV downloads (no key), refreshed once a day, each with the date of its reading.
+- `tradeboy/sentiment.py`: optional FinBERT headline tone, run locally (`pip install -e '.[sentiment]'`,
+  then `news.sentiment: true`). Off by default: torch needs about 1 GB of RAM.
+
+The news and macro feeds need these hosts reachable from the server: news.google.com,
+fred.stlouisfed.org, the central bank sites in `config/settings.yaml`, www.fxstreet.com,
+nfs.faireconomy.media (calendar), and huggingface.co if FinBERT is on (one model download).
 
 ## Settings
 
