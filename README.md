@@ -189,5 +189,13 @@ python -m tradeboy macro-history      # daily/4h candles since 2004, FRED rates,
 python -m tradeboy macro-backtest     # weekly macro strategies and exit rules, write reports/macro_backtest.md
 ```
 
+### On a server (24/7)
+
+On a fresh Ubuntu 22.04 or 24.04 server, clone the repository and run `bash deploy/setup.sh`. It installs
+everything, asks for the keys (saved only on the server, in `/etc/tradeboy.env`, readable by root only),
+checks the OANDA connection and starts the desk as a `tradeboy` system service on the practice account,
+restarting it after crashes and reboots. `bash deploy/update.sh` pulls the latest main and restarts it.
+Logs: `data/desk.log`; stop with `sudo systemctl stop tradeboy`. Run only one desk per OANDA account.
+
 `--paper` refuses to run against a live OANDA account. Credentials come only from environment variables.
 Never commit them.
