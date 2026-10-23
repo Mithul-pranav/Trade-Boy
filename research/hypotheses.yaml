@@ -1,0 +1,60 @@
+# The quant researcher's and ML researcher's register of hypotheses, written BEFORE each one is tested.
+#
+# Pre-registration is how professional research desks keep themselves honest: the idea, its exact rules,
+# every variant that will be tried and the bar it must pass are written down first and committed. After a
+# test runs, nothing here may be edited to make a result look better; a new idea gets a new entry. The
+# research code only runs variants listed here, and counts every one of them as a trial, so the
+# multiple-testing correction covers everything that was tried, not only what worked.
+#
+# status: registered (not tested yet), tested (see data/research/results.json), retired.
+
+prior_trials:
+  # Strategies already tested on this desk's data before this register existed. They count against
+  # the research family: the more ideas tried, the more likely one looks good by luck.
+  hourly_backtest_pr7: 44
+  weekly_macro_pr8: 13
+
+hypotheses:
+  - id: H1-turtle
+    owner: quant_researcher
+    registered: 2026-10-23
+    status: registered
+    idea: >
+      Trend following on daily forex. The original Turtle rules (1983) catch large trends with small
+      losses on false breakouts. Published rules, no parameters fitted to this data.
+    rules: >
+      N = 20-day ATR (Wilder). System 1: enter on a 20-day breakout, exit on a 10-day opposite breakout,
+      skip a breakout if the previous one would have won, but always take a 55-day breakout. System 2:
+      55-day breakout in, 20-day breakout out. Stop 2N per unit. Pyramiding adds a unit every 0.5N in
+      favour, up to 4, all stops moved to 2N from the newest entry.
+    variants: [turtle_s1, turtle_s2, turtle_s1_single, turtle_s2_single]
+    data: OANDA daily and 4-hour candles with bid and ask, 7 major pairs, 2004 to 2026-10-22
+    costs: median 4-hour closing spread both ways, 0.2 pips slippage per side per unit, financing with
+      OANDA's 0.8%/yr markup
+    test: >
+      Walk-forward from 2008: every 6 months, trade only the variants that showed an edge (t >= 2,
+      60+ trades) in the previous 3 years. Holdout year from 2025-10-22, checked once. Holm correction
+      over every variant in the family, prior trials included.
+    pass_bar: the desk's pass bar in config/settings.yaml (backtest.pass_bar), unchanged
+
+  - id: H2-ml-logit
+    owner: ml_researcher
+    registered: 2026-10-23
+    status: registered
+    idea: >
+      A small, regularised model combining the features each simple rule uses (momentum at 3 horizons,
+      carry, position in the 20-day range, volatility regime) may predict the 5-day direction better
+      than any one rule alone.
+    rules: >
+      L2 logistic regression (lambda 1.0) on standardised features, pooled across the 7 pairs. Refitted
+      every 1 January on all earlier data, with a 5-day embargo so no training label overlaps the test
+      period. Trade long when the predicted chance of a rise is above 0.55, short below 0.45; enter at
+      the next day's open, exit after 5 days or at a 2N stop.
+    variants: [ml_logit]
+    data: same as H1
+    costs: same as H1
+    test: >
+      Every trade is out of sample by construction (the model only sees earlier years). Control: the
+      same model trained on shuffled labels 20 times; the real model must beat at least 19 of them.
+      Holdout year from 2025-10-22.
+    pass_bar: the desk's pass bar in config/settings.yaml (backtest.pass_bar), unchanged

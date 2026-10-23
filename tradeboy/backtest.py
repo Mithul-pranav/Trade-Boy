@@ -420,7 +420,7 @@ def check_pass_bar(bar: PassBar, oos: dict, stressed: dict, windows: list[Window
          positive >= bar.min_positive_windows_pct),
         ("Survives higher costs", f"still positive with +{bar.stress_extra_pips} pips per trade",
          f"{stressed['avg_r']:+.3f}R", stressed["avg_r"] > 0),
-        ("Worst drop on the 100 USD budget", f"at most {bar.max_drawdown_pct:.0f}%", f"{desk['max_drawdown_pct']}%",
+        ("Worst drop on the budget at 0.5% risk per trade", f"at most {bar.max_drawdown_pct:.0f}%", f"{desk['max_drawdown_pct']}%",
          desk["max_drawdown_pct"] <= bar.max_drawdown_pct and desk["trades"] > 0),
         ("Holdout year (never used to choose anything)", f"average above {bar.holdout_min_avg_r:+.2f}R",
          f"{holdout['avg_r']:+.3f}R over {holdout['trades']} trades",
