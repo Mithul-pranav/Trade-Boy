@@ -1,7 +1,72 @@
 # Trade-Boy
 
-An autonomous forex trading desk run by Claude agents that debate each other before every trade.
-See the [design doc](https://claude.ai/artifact/F3iKLT8hej9v6urvSDaKW9) for the full plan.
+An autonomous trading desk run by Claude agents that debate each other before every trade.
+See the [design doc](https://claude.ai/artifact/F3iKLT8hej9v6urvSDaKW9) for the original plan.
+
+**Current focus: the tech stocks desk** (below). The forex desk that follows it is kept for reference; Mithul
+dropped forex on 2026-10-23 as too risky.
+
+## Tech stocks desk (Alpaca paper trading)
+
+The 20 largest US tech companies (`config/stocks.yaml`), traded on an **Alpaca paper account only**: the live
+trading host is not in the code. The desk trades a 1000 USD budget inside the paper account and halts when the
+original 1000 USD is gone, until Mithul approves more (`tradeboy stocks resume --new-budget`).
+
+**Debates run on events, not on a timer.** Free code checks every 10 minutes while the market is open for:
+an earnings release (SEC 8-K item 2.02), a 10-Q, 10-K or material 8-K, a move of 4%+ against QQQ that is
+also 2.5+ standard deviations, or a burst of headlines. At most 4 debates a day and one per stock per day.
+
+| Seat | Who | Reads |
+| --- | --- | --- |
+| Filings and earnings analyst | Sonnet | The SEC filing itself (the press release for earnings), recent filings, next earnings date |
+| News and sentiment analyst | Sonnet + 1 web search | Google News on the company, last 3 days |
+| Technical analyst | Sonnet | Daily and hourly charts, strength against QQQ |
+| Skeptic | Sonnet | Everything above; argues against the side the analysts lean to |
+| Risk manager | Sonnet | Open positions, the risk quant's numbers, the next earnings date |
+| Head of desk | Opus | The whole debate and every agent's track record |
+
+The rules that make them argue rather than agree are the forex desk's, enforced in code: independent first
+views, rebuttals when they disagree, stance changes must name the argument, unanswered fatal or serious
+objections halve the size, an agreement alarm. Every debate ends long or short.
+
+**The quant team is code (no Claude cost):**
+
+- *Quant researcher* (`stocks/research.py`): post-earnings drift, tested honestly on 2008+ history (SEC
+  earnings timestamps, Yahoo prices, next-open entry, ATR stop, costs, walk-forward, holdout, Holm). Only a
+  rule that passes is promoted to the quant seat in debates. Anything that relies on Claude *reading* old
+  news can only be tested forward: Claude already knows how those stories ended.
+- *Risk quant*: correlated risk with open positions, net risk per group (semiconductors, platforms, ...)
+  and the volatility regime. Its size limit is enforced in code.
+- *Quant trader*: slippage of every fill against the quote at decision time, stop distance against the daily range.
+- *Quant developer*: a daily health check (every position has a live stop, nothing unmanaged, no overdue
+  time limits, spend caps) with a Telegram alert on problems.
+- *ML researcher*: calibration of every agent's confidence (are 70% calls right 70% of the time?).
+
+**Hard limits** (`risk:` in `config/stocks.yaml`): 1% of the budget at risk per trade, at most 4 positions,
+4% total risk, one position at most 35% of the budget (an overnight gap can jump a stop), no leverage, stops
+between 1% and 12%, spread under 0.25%, no entries in the first 5 or last 15 minutes, no entries within 2
+trading days of earnings, 3% daily loss limit. Shorts are whole shares only (Alpaca's rule); longs can be fractional.
+
+**Exits come first** (`stocks/exits.py`): every position has a live stop order at Alpaca (re-placed each session
+for fractional shares); positions are closed the session before a scheduled earnings report, at their time
+limit, or at the target; trailing stops follow 1R behind once 1R in profit; a new filing, news burst or a move
+halfway to the stop triggers one cheap hold-or-close review.
+
+```bash
+# needs TRADEBOY_ALPACA_KEY_ID, TRADEBOY_ALPACA_SECRET_KEY, TRADEBOY_SEC_USER_AGENT, TRADEBOY_ANTHROPIC_API_KEY
+python -m tradeboy stocks check            # Alpaca paper account, market clock, quotes
+python -m tradeboy stocks events           # what the event scanner sees now (free)
+python -m tradeboy stocks debate NVDA      # one debate now, printed (dry run)
+python -m tradeboy stocks run --paper      # the desk on the paper account
+python -m tradeboy stocks status           # budget, net after API costs, positions, track records, calibration
+python -m tradeboy stocks research-download && python -m tradeboy stocks research   # the drift test
+```
+
+On a server: `bash deploy/setup_stocks.sh` installs it as the `tradeboy-stocks` service. The server needs
+these hosts: paper-api.alpaca.markets, data.alpaca.markets, query1/query2.finance.yahoo.com, fc.yahoo.com,
+www.sec.gov, data.sec.gov, news.google.com, api.anthropic.com, api.telegram.org.
+
+# Forex desk (stopped 2026-10-23)
 
 ## Status
 

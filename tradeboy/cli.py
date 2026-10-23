@@ -18,6 +18,8 @@
     tradeboy resume   clear the kill switch after Mithul has approved trading again
     tradeboy resume --new-budget
                       also start a fresh budget (capital.starting_amount) from the current account value
+    tradeboy stocks ...
+                      the tech stocks desk on Alpaca paper trading (see tradeboy/stocks/cli.py)
 """
 
 from __future__ import annotations
@@ -227,6 +229,11 @@ def macro_backtest() -> None:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["stocks"]:
+        from .stocks.cli import main as stocks_main
+
+        stocks_main(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(prog="tradeboy")
     parser.add_argument("command", choices=["check", "run", "debate", "status", "test-alert", "resume", "history",
                                             "backtest", "macro-history", "macro-backtest"])
