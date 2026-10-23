@@ -1,0 +1,118 @@
+# Trade-Boy tech stocks desk (Alpaca PAPER trading only). Every number is a starting default.
+
+# The 20 largest US tech companies, as proposed on 2026-10-23 (Mithul to confirm). The group sets the
+# risk quant's exposure limits: stocks in one group tend to move together.
+universe:
+  NVDA: {name: Nvidia, group: semiconductors}
+  MSFT: {name: Microsoft, group: platforms}
+  AAPL: {name: Apple, group: platforms}
+  GOOGL: {name: Alphabet, group: platforms}
+  AMZN: {name: Amazon, group: platforms}
+  META: {name: Meta Platforms, group: platforms}
+  AVGO: {name: Broadcom, group: semiconductors}
+  TSLA: {name: Tesla, group: consumer tech}
+  ORCL: {name: Oracle, group: software}
+  NFLX: {name: Netflix, group: consumer tech}
+  PLTR: {name: Palantir, group: software}
+  AMD: {name: Advanced Micro Devices, group: semiconductors}
+  CSCO: {name: Cisco, group: hardware}
+  IBM: {name: IBM, group: software}
+  MU: {name: Micron, group: semiconductors}
+  CRM: {name: Salesforce, group: software}
+  INTU: {name: Intuit, group: software}
+  NOW: {name: ServiceNow, group: software}
+  QCOM: {name: Qualcomm, group: semiconductors}
+  AMAT: {name: Applied Materials, group: semiconductors}
+
+# What every stock is compared with: a stock that falls with the whole market isn't company news.
+benchmark: QQQ
+
+# The desk trades only this budget, not the whole Alpaca paper account (which starts at 100,000 USD).
+# When the original budget is gone, everything is closed and the desk halts until Mithul approves more.
+capital:
+  starting_amount: 1000
+  currency: USD
+
+# Allow shorts. Alpaca only shorts whole shares (longs can be fractional), so a short of an
+# expensive stock that can't fit the per-trade risk is logged but not placed.
+allow_shorts: true
+
+scanner:
+  interval_minutes: 10           # how often events are checked while the market is open
+
+# Hard limits enforced in code. No agent can override these. Percentages are of the budget equity.
+risk:
+  risk_per_trade_pct: 1.0        # max loss if the stop is hit (gaps can lose more; see max_position_pct)
+  max_open_positions: 4
+  max_total_risk_pct: 4.0        # combined risk at the stops of all open positions
+  daily_loss_limit_pct: 3.0      # no new trades for the rest of the day
+  max_drawdown_pct:              # empty: rely on the budget rule (halt when the original budget is gone)
+  max_position_pct: 35.0         # one position's value; caps the damage from an overnight gap
+  max_gross_pct: 100.0           # all positions together: no leverage, ever
+  min_stop_pct: 1.0              # a closer stop is noise for a large stock
+  max_stop_pct: 12.0
+  max_spread_pct: 0.25           # skip a stock while its bid/ask spread is wider than this
+  no_entry_first_minutes: 5      # the opening auction is noisy
+  no_entry_last_minutes: 15
+  earnings_blackout_days: 2      # no new trade when earnings are this many days away or closer
+  close_before_earnings: true    # open trades are closed the session before a scheduled report
+
+# The Claude agents. Debates run only on events: earnings, SEC filings, big moves, news bursts.
+claude:
+  scanner_model: claude-haiku-5-5
+  analyst_model: claude-sonnet-5-5
+  head_model: claude-opus-5-5
+  analyst_effort: medium
+  head_effort: high
+  daily_budget_usd: 0.90         # rolling 24 hours; shared idea with the forex desk's caps
+  monthly_budget_usd: 20.0       # Mithul's prepaid credits
+  max_debates_per_day: 4
+  max_events_per_scan: 1
+  debate_cooldown_hours: 20      # one debate per stock per day at most
+  web_searches_per_agent: 1      # the news analyst may search to check a story
+
+# What counts as an event worth a (paid) debate.
+events:
+  filing_forms: ["8-K", "10-Q", "10-K"]
+  # 8-K items that matter for the price: results (2.02), big deals (1.01, 2.01), impairments (2.06),
+  # executives leaving or joining (5.02), guidance or other disclosures (7.01, 8.01).
+  material_8k_items: ["1.01", "1.02", "2.01", "2.02", "2.05", "2.06", "4.02", "5.02", "7.01", "8.01"]
+  big_move_pct: 4.0              # today's move against the benchmark
+  big_move_sigma: 2.5            # ...and at least this many daily standard deviations
+  news_burst_headlines: 8        # this many headlines on the stock in the last 3 hours
+
+sec:
+  # SEC EDGAR asks every script for a contact in its User-Agent. Set TRADEBOY_SEC_USER_AGENT
+  # (for example "Trade-Boy your@email.com") or the SEC may refuse the requests.
+  user_agent: Trade-Boy research (set TRADEBOY_SEC_USER_AGENT)
+
+# Exits are planned at entry (hold_days, exit type, why the trade exists, what closes it early).
+exits:
+  max_hold_days: 15
+
+# The quant team: plain code, no Claude cost.
+team:
+  risk_quant:
+    max_correlated_risk_pct: 3.0  # risk at the stops, counting how the positions move together
+    max_group_risk_pct: 2.0       # net risk on any one group (e.g. semiconductors)
+    vol_spike: 1.25
+
+# Research (quant researcher): the post-earnings drift backtest, code only.
+research:
+  history_start: 2008-01-01
+  first_test: 2012-01-01
+  holdout_start: 2025-10-01
+  train_years: 3
+  test_months: 6
+  cost_bps_per_side: 5          # spread plus slippage on a large stock, each way
+  borrow_bps_per_year: 30       # short borrow fee for easy-to-borrow megacaps
+  pass_bar:
+    min_trades: 200
+    min_avg_r: 0.05
+    min_t_stat: 2.0
+    min_profit_factor: 1.1
+    min_positive_windows_pct: 60.0
+    holdout_min_avg_r: 0.0
+
+journal:
+  path: data/stocks_journal.sqlite3
