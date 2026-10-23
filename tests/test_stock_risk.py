@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from tests.stock_fakes import NOW
+from stock_fakes import NOW
 from tradeboy.models import Side
 from tradeboy.stocks.config import StockLimits
 from tradeboy.stocks.models import Asset, Clock, StockProposal, StockQuote

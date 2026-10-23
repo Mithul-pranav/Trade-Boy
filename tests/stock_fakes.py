@@ -41,7 +41,7 @@ def head(side="long", stop=None, target=None, answers=(), size=1.0, exit_type="t
 
 
 def script(price=124.0, side="long", **head_kw):
-    from tests.fakes import rebuttal, risk, skeptic
+    from fakes import rebuttal, risk, skeptic
 
     stop = price * 0.95 if side == "long" else price * 1.05
     target = price * 1.10 if side == "long" else price * 0.90

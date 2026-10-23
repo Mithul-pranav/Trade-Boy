@@ -1,8 +1,8 @@
 from datetime import date, timedelta
 
-from tests.fakes import FakeLLM
-from tests.stock_fakes import NOW, FakeAlpaca, FakeEarnings, FakeEdgar, FakeNews, far_earnings, filing, script, settings
-from tests.test_stock_desk import NoAlerts
+from fakes import FakeLLM
+from stock_fakes import NOW, FakeAlpaca, FakeEarnings, FakeEdgar, FakeNews, far_earnings, filing, script, settings
+from test_stock_desk import NoAlerts
 from tradeboy.journal import Journal
 from tradeboy.stocks.desk import StockDesk
 

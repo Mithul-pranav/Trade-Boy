@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
-from tests.fakes import FakeLLM, rebuttal, skeptic
-from tests.stock_fakes import (NOW, FakeAlpaca, FakeEarnings, FakeEdgar, FakeNews, far_earnings, filing, script,
+from fakes import FakeLLM, rebuttal, skeptic
+from stock_fakes import (NOW, FakeAlpaca, FakeEarnings, FakeEdgar, FakeNews, far_earnings, filing, script,
                                settings)
 from tradeboy.journal import Journal
 from tradeboy.stocks.desk import StockDesk

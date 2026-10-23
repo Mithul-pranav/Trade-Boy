@@ -1,7 +1,7 @@
 import json
 from datetime import date, datetime, time, timedelta, timezone
 
-from tests.stock_fakes import NOW, bars, settings
+from stock_fakes import NOW, bars, settings
 from tradeboy.journal import Journal
 from tradeboy.stocks import research
 from tradeboy.stocks.market import NEW_YORK

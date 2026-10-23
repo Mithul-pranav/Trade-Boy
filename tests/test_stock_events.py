@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
-from tests.stock_fakes import NOW, FakeAlpaca, FakeEdgar, FakeNews, bars, filing, settings
+from stock_fakes import NOW, FakeAlpaca, FakeEdgar, FakeNews, bars, filing, settings
 from tradeboy.journal import Journal
 from tradeboy.stocks.alpaca import AlpacaPaper
 from tradeboy.stocks.events import EventScanner
